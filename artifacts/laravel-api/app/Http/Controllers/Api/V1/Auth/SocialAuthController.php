@@ -20,22 +20,30 @@ class SocialAuthController extends Controller
 {
     private const ALLOWED_PROVIDERS = ['google', 'github'];
 
-    // State tokens expire in 10 minutes (one-time use)
+    // State/verifier pairs expire in 10 minutes (one-time use)
     private const STATE_TTL_MINUTES = 10;
 
     public function __construct(private readonly AuditService $audit) {}
 
     // ── GET /api/v1/auth/social/{provider} ────────────────────────────────────
-    // Returns the OAuth redirect URL for the client. Generates a server-side
-    // state token stored in cache to prevent CSRF on the callback.
+    // Returns the OAuth redirect URL + a state_verifier the client must present
+    // at the callback. The server caches hash(verifier) bound to the provider,
+    // so only the original requester (who holds the verifier) can complete the flow.
+    // This prevents OAuth login-swap / CSRF even for stateless API callers.
 
     public function redirect(Request $request, string $provider): JsonResponse
     {
         $this->validateProvider($provider);
 
-        // Generate a random state token and store it in cache
-        $state = Str::random(40);
-        Cache::put("oauth_state:{$state}", $provider, now()->addMinutes(self::STATE_TTL_MINUTES));
+        // Generate cryptographically random state (sent to provider) + verifier (held by client)
+        $state    = Str::random(40);
+        $verifier = Str::random(40);
+
+        // Store {provider, verifier_hash} — never the plaintext verifier
+        Cache::put("oauth_state:{$state}", [
+            'provider'      => $provider,
+            'verifier_hash' => hash('sha256', $verifier),
+        ], now()->addMinutes(self::STATE_TTL_MINUTES));
 
         $url = Socialite::driver($provider)
             ->stateless()
@@ -43,32 +51,48 @@ class SocialAuthController extends Controller
             ->redirect()
             ->getTargetUrl();
 
-        return response()->json(['data' => ['redirect_url' => $url]]);
+        return response()->json([
+            'data' => [
+                'redirect_url'  => $url,
+                // Client must store this and include it as ?state_verifier= in the callback request
+                'state_verifier' => $verifier,
+            ],
+        ]);
     }
 
     // ── GET /api/v1/auth/social/{provider}/callback ───────────────────────────
-    // Handles the OAuth callback. Validates the server-side state token,
-    // then returns a Sanctum token.
+    // Handles the OAuth provider callback. Validates:
+    //   1. state exists in cache
+    //   2. cached provider matches the route {provider}
+    //   3. hash(state_verifier) matches the cached verifier_hash
+    // Only the client that received the original redirect_url can satisfy (3).
 
     public function callback(Request $request, string $provider): JsonResponse
     {
         $this->validateProvider($provider);
 
-        // Validate server-side state to prevent CSRF, and verify the cached provider
-        // matches this callback's {provider} route param (strict binding)
-        $state = $request->query('state');
-        $cachedProvider = $state ? Cache::get("oauth_state:{$state}") : null;
+        $state    = $request->query('state');
+        $verifier = $request->query('state_verifier');
 
-        if (! $state || $cachedProvider === null || $cachedProvider !== $provider) {
+        // Retrieve cached payload without consuming yet (need to validate first)
+        $cached = $state ? Cache::get("oauth_state:{$state}") : null;
+
+        if (
+            ! $state
+            || ! $verifier
+            || ! is_array($cached)
+            || ($cached['provider'] ?? null) !== $provider
+            || ! hash_equals($cached['verifier_hash'], hash('sha256', $verifier))
+        ) {
             return response()->json([
                 'type'   => 'https://platform.local/errors/oauth-invalid-state',
                 'title'  => 'Invalid OAuth State',
                 'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-                'detail' => 'The OAuth state parameter is missing, has expired, or does not match the provider.',
+                'detail' => 'OAuth state validation failed. The request may have been tampered with.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Consume state token atomically (one-time use)
+        // Atomically consume — prevents replay
         Cache::forget("oauth_state:{$state}");
 
         try {
@@ -113,7 +137,6 @@ class SocialAuthController extends Controller
                 ]
             );
 
-            // Link social account
             $user->socialAccounts()->create([
                 'provider'               => $provider,
                 'provider_id'            => $socialUser->getId(),
