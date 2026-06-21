@@ -22,6 +22,13 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->api(prepend: [
             \Illuminate\Http\Middleware\HandleCors::class,
+            \App\Http\Middleware\SecurityHeadersMiddleware::class,
+        ]);
+
+        $middleware->alias([
+            'account.not.locked' => \App\Http\Middleware\EnsureAccountNotLocked::class,
+            'platform.admin'     => \App\Http\Middleware\EnsurePlatformAdminKey::class,
+            'auth'               => \App\Http\Middleware\Authenticate::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

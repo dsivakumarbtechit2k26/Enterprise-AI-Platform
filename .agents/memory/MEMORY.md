@@ -1,3 +1,4 @@
 - [Tenancy purgeTenantConnection driver bug](tenancy-purge-driver-bug.md) — stancl/tenancy v3 purges `config['database.connections.tenant']` before using it; use `pgsql` as template_tenant_connection instead of `tenant`
 - [Laravel Replit env injection](laravel-replit-env-injection.md) — Replit workflow processes don't inherit shell env vars; startup script must inject PGHOST/DATABASE_URL etc. into .env
 - [PostgreSQL schema-based tenancy](pgsql-schema-tenancy.md) — central schema uses `central`, tenant schemas named `tenant_{id}`; central schema must be created with raw SQL before migrations
+- [Laravel API auth patterns](laravel-api-auth-patterns.md) — key patterns for stateless Sanctum token auth: custom Authenticate middleware, ResetPassword URL, session vs cache, table names

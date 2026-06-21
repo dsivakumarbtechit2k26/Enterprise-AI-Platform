@@ -1,14 +1,19 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\Hash;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
     protected $connection = 'central';
 
@@ -38,11 +43,72 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
-            'last_login_at' => 'datetime',
-            'locked_until' => 'datetime',
-            'mfa_enabled' => 'boolean',
-            'mfa_backup_codes' => 'encrypted:array',
-            'password' => 'hashed',
+            'last_login_at'     => 'datetime',
+            'locked_until'      => 'datetime',
+            'mfa_enabled'       => 'boolean',
+            'mfa_backup_codes'  => 'encrypted:array',
+            'password'          => 'hashed',
         ];
+    }
+
+    // ── Relations ────────────────────────────────────────────────────────────
+
+    public function socialAccounts(): HasMany
+    {
+        return $this->hasMany(SocialAccount::class);
+    }
+
+    public function passwordHistory(): HasMany
+    {
+        return $this->hasMany(UserPasswordHistory::class)->latest();
+    }
+
+    // ── Lockout ───────────────────────────────────────────────────────────────
+
+    public function isLocked(): bool
+    {
+        return $this->locked_until !== null && $this->locked_until->isFuture();
+    }
+
+    public function incrementFailedLogin(): void
+    {
+        $count = $this->failed_login_count + 1;
+        $data  = ['failed_login_count' => $count];
+
+        if ($count >= 10) {
+            $data['locked_until'] = now()->addMinutes(15);
+        }
+
+        $this->update($data);
+    }
+
+    public function clearFailedLogins(): void
+    {
+        $this->update([
+            'failed_login_count' => 0,
+            'locked_until'       => null,
+            'last_login_at'      => now(),
+        ]);
+    }
+
+    // ── Password history ─────────────────────────────────────────────────────
+
+    public function isPasswordInHistory(string $plaintext): bool
+    {
+        return $this->passwordHistory()
+            ->take(5)
+            ->get()
+            ->contains(fn ($h) => Hash::check($plaintext, $h->password_hash));
+    }
+
+    public function addPasswordToHistory(string $hash): void
+    {
+        $this->passwordHistory()->create(['password_hash' => $hash]);
+
+        // Keep only last 5
+        $ids = $this->passwordHistory()->skip(5)->pluck('id');
+        if ($ids->isNotEmpty()) {
+            UserPasswordHistory::whereIn('id', $ids)->delete();
+        }
     }
 }
