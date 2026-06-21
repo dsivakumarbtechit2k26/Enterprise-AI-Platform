@@ -1,0 +1,258 @@
+---
+name: Enterprise Application Platform & AI Operating System
+description: Use this skill when building enterprise-grade multi-tenant SaaS applications, ERP, CRM, HRM, Inventory, Accounting, POS, Warehouse, Manufacturing, E-Commerce, Healthcare, Education, and custom business platforms. Covers full-stack (React + Laravel + MySQL) with dynamic modules, workflows, RBAC, subscriptions, payments, notifications, AI agents, MCP integration, and low-code/no-code.
+---
+
+# Instructions
+
+## Technology Stack
+- **Frontend:** React 18+ with TypeScript, Vite, TailwindCSS, shadcn/ui or Ant Design
+- **Backend:** Laravel 13 (PHP 8.3+)
+- **Database:** MySQL 8.0+ (primary) with PostgreSQL 16+ and pgvector for AI/vector features
+- **Cache & Queues:** Redis
+- **Real-time:** Laravel Reverb or Pusher
+- **AI/ML:** OpenAI, Anthropic, Google Gemini, Ollama (local) – configurable
+- **Vector DB:** pgvector (PostgreSQL) or Pinecone/Qdrant (optional)
+
+## Core Principles
+- Build scalable enterprise-grade applications.
+- Follow clean architecture and SOLID principles.
+- Generate production-ready code only.
+- Design for multi-tenant SaaS environments.
+- Security-first development approach.
+- API-first architecture.
+- Metadata-driven dynamic platform.
+- AI-native application design.
+- Event-driven architecture.
+- Cloud-ready and horizontally scalable.
+
+## Architecture Standards
+### System Design
+- Use modular architecture (Laravel modules or domain-driven folders).
+- Separate business logic from presentation.
+- Implement Service Layer and Repository patterns.
+- Support microservice or modular monolith architecture.
+- Enable event-driven communication (Laravel Events/Listeners).
+- Design modules to be independently deployable.
+- Support plugin architecture.
+
+### Backend (Laravel)
+- REST APIs using API Resources and Form Requests.
+- GraphQL (Lighthouse) when required.
+- Validation via FormRequest classes.
+- Database transactions for critical operations.
+- Exception handling with Laravel exception handler.
+- Audit logs (spatie/laravel-activitylog).
+- API versioning.
+- Queues and background jobs (Redis + Laravel Horizon).
+- Caching (Redis).
+- API documentation (Scramble, Scribe, or OpenAPI).
+
+### Frontend (React)
+- Responsive design (TailwindCSS).
+- Component-based architecture with hooks.
+- Dynamic form rendering from JSON schema.
+- Dynamic table component with server-side pagination, sorting, filtering.
+- Dynamic dashboard with grid layout and widgets.
+- Mobile-friendly and accessible.
+- Lazy loading (React.lazy, Suspense).
+- Real-time updates (Laravel Echo + WebSockets).
+- Metadata-driven UI generation.
+
+## Multi-Tenant SaaS Platform
+### Database Architecture (Central Platform + Tenant Databases)
+- **Central Platform Database**: Stores shared data that is common to all tenants: tenant records, subscription plans, billing info, user identities (global logins), roles, permissions, audit logs, notifications, platform configurations, and MCP tool registrations. This database is the single source of truth for subscription billing, authentication, and cross-tenant administration, making installation and maintenance straightforward.
+- **Tenant Databases**: Each tenant has its own isolated database (or PostgreSQL schema) that holds all tenant-specific business data: ERP modules (inventory, orders, HR, etc.), dynamic modules, workflows, AI embeddings, and file references. Isolation guarantees data security, performance, and independent backup/restore capabilities. Lower-tier plans may optionally use a shared database with row-level security, but dedicated databases are the default for production.
+- **Tenant Resolution**: A middleware identifies the tenant via subdomain or custom domain, then dynamically sets the database connection using Laravel's `config('database.connections.tenant')` pattern or the `stancl/tenancy` package. The connection is resolved once per request and cached for subsequent queries.
+- **Migration Strategy**: Central migrations live in the default `database/migrations` and run once during platform installation. Tenant migrations are stored in a dedicated directory (`database/migrations/tenant`) and are applied automatically to each tenant’s database upon creation or upgrade (using `tenancy:migrate` or a custom queue job).
+- **Subscription Billing Integration**: The central platform manages plans, coupons, invoices, and payment methods via Laravel Cashier (Stripe/Paddle). Feature gating is enforced by global middleware that checks the tenant’s plan features. Quotas (users, storage, API calls) are tracked centrally; optional usage counters can be synced to tenant databases for faster local checks.
+- **Installation & Maintenance Benefits**:
+  - A single central dashboard to manage all tenants, plans, and platform settings.
+  - Subscription logic and payment webhooks are handled once, not duplicated per tenant.
+  - Tenant databases can be hosted on separate servers or clusters for horizontal scaling.
+  - New tenant provisioning is fully automated: create tenant record → create empty database → run migrations → seed default data → activate subscription.
+
+### Tenant Management (Laravel)
+- Tenant isolation (single database, multiple databases, or schema-per-tenant via stancl/tenancy).
+- Shared or isolated databases per plan.
+- Tenant-specific configurations, branding, themes, and domains.
+- Usage tracking and resource quotas.
+
+### Subscription Management (Laravel Cashier)
+- Plans: Free, Trial, Monthly, Yearly, Enterprise.
+- Feature gating (gates/policies + middleware).
+- Usage limits.
+- Upgrades, downgrades, grace periods, expiration handling.
+- Automated renewals.
+
+## Security
+### Authentication (Laravel Fortify/Sanctum)
+- Email login, social login (Socialite), SSO (SAML/OIDC).
+- MFA with TOTP, Email OTP, SMS OTP.
+- Password policies.
+
+### Authorization (spatie/laravel-permission)
+- RBAC with module, feature, field-level, and record-level permissions.
+- Tenant-level permissions.
+- AI permission enforcement.
+
+### Security Controls
+- SQL Injection protection (Eloquent).
+- XSS protection (auto-escaping in Blade, React JSX).
+- CSRF protection (Sanctum SPA).
+- Rate limiting (Laravel rate limiter).
+- Data encryption.
+- Secure file storage (Flysystem, signed URLs).
+- Security audit logs and session management.
+
+## Dynamic Low-Code / No-Code Platform
+### Dynamic Module Builder
+- Users create modules without coding.
+- Automatically generate: migrations, models (Eloquent/dynamic), CRUD APIs, forms, tables, permissions, menus, navigation, reports, dashboards, notifications, audit logs.
+
+### Dynamic Form Builder (React)
+- Drag-and-drop (react-dnd/dnd-kit), validation (zod/yup).
+- Conditional fields, dynamic sections, file uploads, rich text (TipTap/Quill).
+- Supported field types: Text, Number, Decimal, Currency, Date, Time, Datetime, Checkbox, Radio, Dropdown, Multi Select, User Picker, File Upload, Image Upload, Signature, Formula, Relationship, AI Field.
+
+### Dynamic Workflow Builder (React Flow)
+- Drag-and-drop builder.
+- Approval workflows, conditional logic, escalations, notifications, scheduled jobs, webhooks, AI actions.
+
+### Dynamic Dashboard Builder
+- KPI cards, charts (Recharts/Chart.js), tables, reports, AI insights, real-time widgets, custom layouts (react-grid-layout).
+
+### Dynamic Report Builder
+- Custom reports with filters, grouping, aggregations, charts.
+- Export to PDF (barryvdh/laravel-dompdf), Excel (maatwebsite/excel), CSV.
+
+### Dynamic API Builder
+- Auto-generated APIs with permissions, documentation, versioning, webhooks, API keys.
+
+### Dynamic CMS Page Builder
+- **Visual drag‑and‑drop page builder** (Grapes.js / Craft.js / custom) with real‑time preview.
+- **Full layout control**: header, footer, sidebars, content sections, and global elements (menus, logos, social links).
+- **Responsive design**: adjust layouts, visibility, and styles for desktop, tablet, and mobile.
+- **Pre‑built blocks**: hero, sliders, galleries, forms, CTAs, testimonials, pricing tables, dynamic module lists, charts, and custom HTML/JS blocks.
+- **Dynamic data binding**: embed records from any dynamic module (e.g., product grid, article list) directly into pages with filtering and sorting.
+- **Custom themes**: per‑tenant theme settings (colours, fonts, spacing) inherited by all pages, overridable at page level.
+- **SEO metadata**: custom URLs, meta titles, descriptions, Open Graph tags.
+- **Versioning and drafting**: save drafts, publish, rollback, and schedule publishing.
+- **Permissions**: page editing restricted by roles; page visibility can be public, logged‑in, or role‑specific.
+- **Headless mode**: pages can be consumed via API for mobile apps or static site generation.
+- **Multi‑language**: support translated content for each page block.
+
+## ERP Business Rules
+- Prevent negative stock.
+- Warehouse-level and multi-location inventory.
+- Inventory reservations.
+- Fulfillment, purchase, and sales workflows.
+- Accounting integration.
+- Audit trail and transaction history.
+
+## Notifications (Laravel Notification)
+### Supported Channels
+- Email (Laravel Mail), SMS (Twilio/Vonage), WhatsApp (Twilio/Meta), Push (Firebase/Web Push), In-App (database).
+
+### Features
+- Templates, scheduling, personalization, delivery tracking, retry handling.
+
+## Payment System (Laravel Cashier)
+- Gateways: Stripe, Razorpay, PayPal.
+- Subscription and recurring billing.
+- Invoices (PDF), refunds, webhooks, tax support.
+
+## AI Operating System
+### AI Chat Assistant
+- Application assistance, data queries, workflow guidance, context-aware conversations.
+
+### AI Knowledge Base (RAG)
+- Ingestion of PDFs, Word, Excel via queues.
+- Chunking and embedding generation, stored in vector DB.
+- Retrieval-augmented generation for answers.
+
+### AI Search
+- Natural language, semantic, structured, cross-module.
+
+### AI Report Generator
+- Generate reports, charts, dashboards via natural language.
+
+### AI Data Entry
+- OCR, document extraction, invoice extraction, auto-fill forms.
+
+### AI Insights
+- Trend detection, forecasting, anomaly detection, recommendations.
+
+### AI Agents
+- Support, Sales, Finance, HR, Operations, Monitoring, Developer, Custom agents.
+
+### AI Agent Builder
+- Create agents with instructions, tools, permissions, memory, workflows, knowledge bases.
+
+### AI Workflow Automation
+- AI-triggered workflows, AI approvals, AI recommendations, AI notifications, AI monitoring.
+
+## MCP Integration (Laravel MCP Server)
+- MCP Server with tools, resources, agent connectivity.
+- Secure tool execution with tenant isolation and permission enforcement.
+
+## Vector Database & RAG
+- pgvector (primary), Pinecone, Qdrant, Weaviate (optional).
+- Semantic search, embeddings, document indexing, knowledge retrieval.
+
+## Audit & Compliance
+- Audit logs (spatie/laravel-activitylog).
+- Activity tracking, compliance reports, AI activity logs, change history, approval history.
+
+## Performance
+- Pagination on all listings.
+- Search and filters everywhere (Laravel Scout with Meilisearch/Algolia or MySQL fulltext).
+- Query optimization (eager loading, indexes).
+- Caching (Redis), lazy loading (React, Eloquent).
+- Background processing (queues).
+- Streaming AI responses (SSE/WebSocket).
+
+## System Operations & Automation
+### Database Backup
+- Automated backups for Central Platform Database and all tenant databases.
+- Scheduled backups using Laravel Task Scheduler (daily/weekly snapshots).
+- Backup storage: local disk, cloud (AWS S3, DigitalOcean Spaces, etc.), encrypted and compressed.
+- Backup monitoring and failure alerts via email/Slack.
+- Point-in-time recovery support using binary logs (MySQL) or WAL (PostgreSQL).
+- Retention policies (e.g., keep last 7 daily, 4 weekly, 12 monthly).
+- One-click restoration and automated testing of backups.
+
+### Cron Job Automation Flow
+- Centralized task scheduling via Laravel Scheduler (single cron entry).
+- Queue workers managed by Supervisor, monitored via Horizon.
+- Automated tenant provisioning: create database, run migrations, seed, activate.
+- Subscription lifecycle management: trial expiration notices, billing retries, grace period handling.
+- Periodic cleanup: expired tokens, old audit logs, temp files, soft-deleted records.
+- AI/ML pipelines: document ingestion, embedding generation, model retraining scheduled jobs.
+- Report generation and distribution (email scheduled reports).
+- Workflow triggers and escalations (checking SLA, overdue tasks).
+- Health checks and uptime monitoring with automated alerts.
+- Backup validation: restore test backups periodically to verify integrity.
+
+## Code Generation Requirements
+Whenever generating code, you must:
+- Generate production-ready code.
+- Include database migrations.
+- Include models (Eloquent).
+- Include services (Laravel service classes).
+- Include repositories where applicable.
+- Include controllers (API/Web).
+- Include APIs (routes, resources, requests).
+- Include frontend components (React + TypeScript).
+- Include validation (FormRequest rules).
+- Include permissions (Spatie roles, gates).
+- Include audit logging.
+- Include tests (PHPUnit, Jest/React Testing Library).
+- Include API documentation (OpenAPI/Scribe).
+- Include subscription controls (Cashier + gates).
+- Include feature gating.
+- Include dynamic CRUD support.
+- Include workflow integration.
+- Include notification integration (channels, templates).
+- Include AI integration (services, MCP tools).
+- Follow security, performance, and scalability best practices.
