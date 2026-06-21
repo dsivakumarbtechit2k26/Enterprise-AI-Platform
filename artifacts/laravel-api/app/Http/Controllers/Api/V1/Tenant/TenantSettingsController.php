@@ -12,8 +12,9 @@ class TenantSettingsController extends Controller
 {
     /**
      * Update the current tenant's profile / onboarding metadata.
-     * Stored as JSON in the tenant's `settings` column alongside any
-     * existing settings (merge, not replace).
+     * Route is guarded by permission:settings.update — only tenant admins
+     * and users with explicit settings management access may call this.
+     * Settings are merged (not replaced) into the tenant's JSON settings column.
      */
     public function update(Request $request): JsonResponse
     {

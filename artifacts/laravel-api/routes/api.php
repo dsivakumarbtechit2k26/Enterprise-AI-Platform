@@ -94,8 +94,9 @@ Route::prefix('v1')->group(function () {
             ->middleware('throttle:3,1')
             ->name('api.v1.auth.email.verify_resend');
 
-        // Tenant profile / onboarding settings
+        // Tenant profile / onboarding settings (restricted to admins / settings managers)
         Route::patch('/tenant/profile', [TenantSettingsController::class, 'update'])
+            ->middleware('permission:settings.update')
             ->name('api.v1.tenant.profile.update');
 
         // Password change
