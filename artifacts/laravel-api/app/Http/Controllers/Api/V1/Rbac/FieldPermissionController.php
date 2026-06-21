@@ -19,7 +19,7 @@ class FieldPermissionController extends Controller
     public function index(Request $request, int $roleId): JsonResponse
     {
         $teamId = $request->attributes->get('active_tenant_id');
-        $role   = $this->findRole($roleId, $teamId);
+        $role   = $this->findRoleForRead($roleId, $teamId);
 
         $fieldPerms = FieldPermission::where('role_id', $role->id)
             ->where(fn ($q) => $q->where('team_id', RbacSeeder::CENTRAL_TEAM)
@@ -37,7 +37,7 @@ class FieldPermissionController extends Controller
     {
         $teamId = $request->attributes->get('active_tenant_id');
         $actor  = $request->user();
-        $role   = $this->findRole($roleId, $teamId);
+        $role   = $this->findRoleForMutation($roleId, $teamId);
 
         $validated = $request->validate([
             'model_class' => ['required', 'string', 'max:255'],
@@ -83,12 +83,13 @@ class FieldPermissionController extends Controller
     {
         $teamId = $request->attributes->get('active_tenant_id');
         $actor  = $request->user();
-        $this->findRole($roleId, $teamId);
+        $this->findRoleForMutation($roleId, $teamId);
 
+        // Tenant actors may only delete field permissions scoped to their own team.
+        // Central field permissions are immutable from tenant context.
         $fp = FieldPermission::where('id', $fieldPermId)
             ->where('role_id', $roleId)
-            ->where(fn ($q) => $q->where('team_id', RbacSeeder::CENTRAL_TEAM)
-                ->orWhere('team_id', $teamId))
+            ->where('team_id', $teamId)
             ->firstOrFail();
 
         $oldValues = [
@@ -107,11 +108,31 @@ class FieldPermissionController extends Controller
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private function findRole(int $roleId, ?string $teamId): Role
+    /**
+     * For read operations: allows viewing field permissions on both central and
+     * tenant-scoped roles so tenant users can inspect inherited central rules.
+     */
+    private function findRoleForRead(int $roleId, ?string $teamId): Role
     {
         return Role::where('id', $roleId)
-            ->where(fn ($q) => $q->where('team_id', RbacSeeder::CENTRAL_TEAM)
-                ->orWhere('team_id', $teamId))
+            ->where(function ($q) use ($teamId) {
+                $q->where('team_id', RbacSeeder::CENTRAL_TEAM);
+                if ($teamId && $teamId !== RbacSeeder::CENTRAL_TEAM) {
+                    $q->orWhere('team_id', $teamId);
+                }
+            })
+            ->firstOrFail();
+    }
+
+    /**
+     * For mutation operations: strictly scoped to the active team only.
+     * Tenant actors cannot create/update/delete field permissions on central roles.
+     * Central actors (team_id === 'central') operate on central roles.
+     */
+    private function findRoleForMutation(int $roleId, ?string $teamId): Role
+    {
+        return Role::where('id', $roleId)
+            ->where('team_id', $teamId ?? RbacSeeder::CENTRAL_TEAM)
             ->firstOrFail();
     }
 }
