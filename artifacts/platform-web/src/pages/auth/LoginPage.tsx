@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,18 +15,43 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+type LoginValues = z.infer<typeof loginSchema>;
+
+/** Map Laravel 422 validation errors onto react-hook-form fields. */
+function applyServerErrors(
+  err: unknown,
+  setError: (field: keyof LoginValues, opts: { message: string }) => void,
+  toast: ReturnType<typeof useToast>["toast"],
+) {
+  const res = err as { errors?: Record<string, string[]>; message?: string };
+  if (res?.errors && typeof res.errors === "object") {
+    let hasFieldError = false;
+    for (const [field, messages] of Object.entries(res.errors)) {
+      if (field === "email" || field === "password") {
+        setError(field as keyof LoginValues, { message: messages[0] });
+        hasFieldError = true;
+      }
+    }
+    if (!hasFieldError) {
+      toast({ title: "Login failed", description: res.message || "Invalid credentials", variant: "destructive" });
+    }
+  } else {
+    toast({ title: "Login failed", description: res?.message || "Invalid credentials", variant: "destructive" });
+  }
+}
+
 export default function LoginPage() {
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
   const { toast } = useToast();
   const loginMutation = useLogin();
 
-  const form = useForm<z.infer<typeof loginSchema>>({
+  const form = useForm<LoginValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { email: "", password: "" },
   });
 
-  const onSubmit = (data: z.infer<typeof loginSchema>) => {
+  const onSubmit = (data: LoginValues) => {
     loginMutation.mutate({ data }, {
       onSuccess: (res) => {
         if (res.requires_mfa) {
@@ -37,13 +61,7 @@ export default function LoginPage() {
           navigate("/");
         }
       },
-      onError: (err) => {
-        toast({
-          title: "Login failed",
-          description: err.message || "Invalid credentials",
-          variant: "destructive",
-        });
-      }
+      onError: (err) => applyServerErrors(err, form.setError, toast),
     });
   };
 
@@ -67,7 +85,7 @@ export default function LoginPage() {
                 <FormItem>
                   <FormLabel>Email</FormLabel>
                   <FormControl>
-                    <Input placeholder="you@company.com" {...field} data-testid="input-email" />
+                    <Input placeholder="you@company.com" autoComplete="email" {...field} data-testid="input-email" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -85,7 +103,7 @@ export default function LoginPage() {
                     </Link>
                   </div>
                   <FormControl>
-                    <Input type="password" {...field} data-testid="input-password" />
+                    <Input type="password" autoComplete="current-password" {...field} data-testid="input-password" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -108,10 +126,10 @@ export default function LoginPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <Button variant="outline" type="button" onClick={() => window.location.href = '/api/v1/auth/social/github'} data-testid="button-github">
+          <Button variant="outline" type="button" onClick={() => { window.location.href = "/api/v1/auth/social/github"; }} data-testid="button-github">
             <Github className="w-4 h-4 mr-2" /> GitHub
           </Button>
-          <Button variant="outline" type="button" onClick={() => window.location.href = '/api/v1/auth/social/google'} data-testid="button-google">
+          <Button variant="outline" type="button" onClick={() => { window.location.href = "/api/v1/auth/social/google"; }} data-testid="button-google">
             <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
               <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
               <path fill="currentColor" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />

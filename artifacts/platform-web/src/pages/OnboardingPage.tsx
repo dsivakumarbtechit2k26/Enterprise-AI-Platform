@@ -4,13 +4,14 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuthStore } from "@/stores/authStore";
-import { useListPlans } from "@workspace/api-client-react";
+import { useListPlans, useCreateCheckout } from "@workspace/api-client-react";
+import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, Building2, Users, Rocket, ChevronRight, ChevronLeft } from "lucide-react";
+import { Check, Building2, Users, Rocket, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
 
 const TOTAL_STEPS = 4;
 
@@ -36,11 +37,11 @@ const INDUSTRIES = [
 ];
 
 const TEAM_SIZES = [
-  { value: "1-10", label: "1–10 people" },
-  { value: "11-50", label: "11–50 people" },
-  { value: "51-200", label: "51–200 people" },
+  { value: "1-10",    label: "1–10 people" },
+  { value: "11-50",   label: "11–50 people" },
+  { value: "51-200",  label: "51–200 people" },
   { value: "201-500", label: "201–500 people" },
-  { value: "500+", label: "500+ people" },
+  { value: "500+",    label: "500+ people" },
 ];
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
@@ -71,8 +72,11 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const { tenant } = useAuthStore();
   const { data: plansData } = useListPlans();
+  const checkoutMutation = useCreateCheckout();
+
   const [step, setStep] = useState(1);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
 
@@ -85,11 +89,57 @@ export default function OnboardingPage() {
     },
   });
 
+  const plans = plansData?.data ?? [];
+
+  const selectedPlanData = plans.find((p) => p.key === selectedPlan);
+
+  const handleSelectPlanAndContinue = () => {
+    if (!selectedPlanData) {
+      setStep(4);
+      return;
+    }
+
+    // Paid plan — redirect to Stripe checkout
+    if (selectedPlanData.price_monthly > 0 && selectedPlanData.stripe_price_id) {
+      const origin = window.location.origin;
+      checkoutMutation.mutate(
+        {
+          // success_url / cancel_url are required by the API but absent from the
+          // generated schema type; cast to satisfy TypeScript.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          data: {
+            price_id:    selectedPlanData.stripe_price_id,
+            success_url: `${origin}/settings/billing?checkout=success`,
+            cancel_url:  `${origin}/onboarding`,
+          } as any,
+        },
+        {
+          onSuccess: (res) => {
+            if (res.url) {
+              window.location.href = res.url;
+            } else {
+              setStep(4);
+            }
+          },
+          onError: () => {
+            toast({
+              title: "Checkout unavailable",
+              description: "Stripe is not configured yet. You can upgrade from Settings → Billing later.",
+              variant: "destructive",
+            });
+            setStep(4);
+          },
+        },
+      );
+    } else {
+      // Free / no stripe_price_id — just continue to done step
+      setStep(4);
+    }
+  };
+
   const handleComplete = () => {
     navigate("/", { replace: true });
   };
-
-  const plans = plansData?.data ?? [];
 
   return (
     <div
@@ -112,9 +162,7 @@ export default function OnboardingPage() {
               <div className="w-16 h-16 bg-primary/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <Building2 className="w-8 h-8 text-primary" />
               </div>
-              <CardTitle className="text-3xl">
-                Welcome to {tenant?.name || "Platform"}
-              </CardTitle>
+              <CardTitle className="text-3xl">Welcome to {tenant?.name || "Platform"}</CardTitle>
               <CardDescription className="text-base mt-2">
                 Your workspace is ready. Let's get you set up in a few quick steps.
               </CardDescription>
@@ -195,7 +243,11 @@ export default function OnboardingPage() {
                           </FormControl>
                           <SelectContent>
                             {INDUSTRIES.map((ind) => (
-                              <SelectItem key={ind} value={ind} data-testid={`option-industry-${ind.toLowerCase().replace(/\s/g, "-")}`}>
+                              <SelectItem
+                                key={ind}
+                                value={ind}
+                                data-testid={`option-industry-${ind.toLowerCase().replace(/\s/g, "-")}`}
+                              >
                                 {ind}
                               </SelectItem>
                             ))}
@@ -219,7 +271,11 @@ export default function OnboardingPage() {
                           </FormControl>
                           <SelectContent>
                             {TEAM_SIZES.map((size) => (
-                              <SelectItem key={size.value} value={size.value} data-testid={`option-size-${size.value}`}>
+                              <SelectItem
+                                key={size.value}
+                                value={size.value}
+                                data-testid={`option-size-${size.value}`}
+                              >
                                 {size.label}
                               </SelectItem>
                             ))}
@@ -239,7 +295,11 @@ export default function OnboardingPage() {
                   >
                     <ChevronLeft className="w-4 h-4 mr-2" /> Back
                   </Button>
-                  <Button type="submit" className="flex-1" data-testid="button-onboarding-next-step2">
+                  <Button
+                    type="submit"
+                    className="flex-1"
+                    data-testid="button-onboarding-next-step2"
+                  >
                     Continue <ChevronRight className="w-4 h-4 ml-2" />
                   </Button>
                 </CardFooter>
@@ -259,59 +319,69 @@ export default function OnboardingPage() {
             </div>
 
             {plans.length > 0 ? (
-              <div className={`grid gap-6 ${plans.length === 3 ? "md:grid-cols-3" : "md:grid-cols-2 max-w-2xl mx-auto"}`}>
-                {plans.map((plan) => {
-                  const isSelected = selectedPlan === plan.key;
-                  const isRecommended = plan.key === "pro";
-                  return (
-                    <Card
-                      key={plan.key}
-                      className={`flex flex-col relative cursor-pointer transition-all ${
-                        isSelected
-                          ? "border-primary ring-2 ring-primary shadow-lg"
-                          : isRecommended
-                          ? "border-primary/50 shadow-md"
-                          : ""
-                      }`}
-                      onClick={() => setSelectedPlan(plan.key)}
-                      data-testid={`card-plan-${plan.key}`}
-                    >
-                      {isRecommended && (
-                        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                          Recommended
-                        </div>
-                      )}
-                      <CardHeader>
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-xl">{plan.name}</CardTitle>
-                          {isSelected && (
-                            <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center">
-                              <Check className="w-4 h-4 text-primary-foreground" />
-                            </div>
+              <div className={`grid gap-6 ${plans.length >= 3 ? "md:grid-cols-3" : "md:grid-cols-2 max-w-2xl mx-auto"}`}>
+                {plans
+                  .filter((p) => ["free", "professional_monthly", "enterprise"].includes(p.key))
+                  .map((plan) => {
+                    const isSelected = selectedPlan === plan.key;
+                    const isRecommended = plan.key === "professional_monthly";
+                    const isFree = plan.price_monthly === 0 && plan.key === "free";
+                    return (
+                      <Card
+                        key={plan.key}
+                        className={`flex flex-col relative cursor-pointer transition-all ${
+                          isSelected
+                            ? "border-primary ring-2 ring-primary shadow-lg"
+                            : isRecommended
+                            ? "border-primary/50 shadow-md"
+                            : ""
+                        }`}
+                        onClick={() => setSelectedPlan(plan.key)}
+                        data-testid={`card-plan-${plan.key}`}
+                      >
+                        {isRecommended && (
+                          <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
+                            Recommended
+                          </div>
+                        )}
+                        <CardHeader>
+                          <div className="flex items-center justify-between">
+                            <CardTitle className="text-xl">{plan.name}</CardTitle>
+                            {isSelected && (
+                              <div className="w-6 h-6 bg-primary rounded-full flex items-center justify-center">
+                                <Check className="w-4 h-4 text-primary-foreground" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-baseline gap-1 mt-2">
+                            {plan.price_monthly === 0 ? (
+                              <span className="text-4xl font-bold">Free</span>
+                            ) : plan.price_monthly == null ? (
+                              <span className="text-2xl font-bold">Contact us</span>
+                            ) : (
+                              <>
+                                <span className="text-4xl font-bold">${plan.price_monthly}</span>
+                                <span className="text-muted-foreground">/mo</span>
+                              </>
+                            )}
+                          </div>
+                          {isFree && (
+                            <p className="text-xs text-muted-foreground mt-1">No credit card required</p>
                           )}
-                        </div>
-                        <div className="flex items-baseline gap-1 mt-2">
-                          <span className="text-4xl font-bold">
-                            {plan.price_monthly === 0 ? "Free" : `$${plan.price_monthly}`}
-                          </span>
-                          {plan.price_monthly > 0 && (
-                            <span className="text-muted-foreground">/mo</span>
-                          )}
-                        </div>
-                      </CardHeader>
-                      <CardContent className="flex-1">
-                        <ul className="space-y-2.5 text-sm">
-                          {plan.features.map((feature, i) => (
-                            <li key={i} className="flex items-start gap-3">
-                              <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                              <span>{feature}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+                        </CardHeader>
+                        <CardContent className="flex-1">
+                          <ul className="space-y-2.5 text-sm">
+                            {plan.features.map((feature, i) => (
+                              <li key={i} className="flex items-start gap-3">
+                                <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                                <span>{feature}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
               </div>
             ) : (
               <Card className="max-w-sm mx-auto p-8 text-center">
@@ -319,7 +389,7 @@ export default function OnboardingPage() {
               </Card>
             )}
 
-            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 max-w-2xl mx-auto">
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 max-w-4xl mx-auto">
               <Button
                 variant="outline"
                 onClick={() => setStep(2)}
@@ -336,12 +406,20 @@ export default function OnboardingPage() {
                   Skip for now
                 </Button>
                 <Button
-                  onClick={() => setStep(4)}
-                  disabled={!selectedPlan}
+                  onClick={handleSelectPlanAndContinue}
+                  disabled={!selectedPlan || checkoutMutation.isPending}
                   data-testid="button-onboarding-next-step3"
                 >
-                  Continue with {plans.find((p) => p.key === selectedPlan)?.name ?? "Free"}
-                  <ChevronRight className="w-4 h-4 ml-2" />
+                  {checkoutMutation.isPending ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Redirecting…
+                    </>
+                  ) : selectedPlanData?.price_monthly != null && selectedPlanData.price_monthly > 0 ? (
+                    <>Start checkout <ChevronRight className="w-4 h-4 ml-2" /></>
+                  ) : (
+                    <>Continue with {selectedPlanData?.name ?? "Free"} <ChevronRight className="w-4 h-4 ml-2" /></>
+                  )}
                 </Button>
               </div>
             </div>
@@ -364,7 +442,7 @@ export default function OnboardingPage() {
               <div className="space-y-3 bg-muted/50 p-4 rounded-lg text-sm">
                 {[
                   "Organization profile saved",
-                  `Plan selected: ${plans.find((p) => p.key === selectedPlan)?.name ?? "Free"}`,
+                  `Plan: ${selectedPlanData?.name ?? "Free"}`,
                   "Team roles and permissions are ready",
                   "Billing can be configured in Settings",
                 ].map((item) => (

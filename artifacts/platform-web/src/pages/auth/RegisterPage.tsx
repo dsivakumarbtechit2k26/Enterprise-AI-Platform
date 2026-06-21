@@ -21,18 +21,45 @@ const registerSchema = z.object({
   path: ["password_confirmation"],
 });
 
+type RegisterValues = z.infer<typeof registerSchema>;
+
+const REGISTER_FIELDS = ["name", "email", "password", "password_confirmation", "tenant_name"] as const;
+
+/** Map Laravel 422 validation errors onto react-hook-form fields. */
+function applyServerErrors(
+  err: unknown,
+  setError: (field: typeof REGISTER_FIELDS[number], opts: { message: string }) => void,
+  toast: ReturnType<typeof useToast>["toast"],
+) {
+  const res = err as { errors?: Record<string, string[]>; message?: string };
+  if (res?.errors && typeof res.errors === "object") {
+    let hasFieldError = false;
+    for (const [field, messages] of Object.entries(res.errors)) {
+      if ((REGISTER_FIELDS as readonly string[]).includes(field)) {
+        setError(field as typeof REGISTER_FIELDS[number], { message: messages[0] });
+        hasFieldError = true;
+      }
+    }
+    if (!hasFieldError) {
+      toast({ title: "Registration failed", description: res.message || "An error occurred", variant: "destructive" });
+    }
+  } else {
+    toast({ title: "Registration failed", description: res?.message || "An error occurred during registration", variant: "destructive" });
+  }
+}
+
 export default function RegisterPage() {
   const navigate = useNavigate();
   const { setAuth } = useAuthStore();
   const { toast } = useToast();
   const registerMutation = useRegister();
 
-  const form = useForm<z.infer<typeof registerSchema>>({
+  const form = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
     defaultValues: { name: "", email: "", password: "", password_confirmation: "", tenant_name: "" },
   });
 
-  const onSubmit = (data: z.infer<typeof registerSchema>) => {
+  const onSubmit = (data: RegisterValues) => {
     registerMutation.mutate({ data }, {
       onSuccess: (res) => {
         if (res.token && res.user) {
@@ -40,13 +67,7 @@ export default function RegisterPage() {
           navigate("/onboarding");
         }
       },
-      onError: (err) => {
-        toast({
-          title: "Registration failed",
-          description: err.message || "An error occurred during registration",
-          variant: "destructive",
-        });
-      }
+      onError: (err) => applyServerErrors(err, form.setError, toast),
     });
   };
 
@@ -70,7 +91,7 @@ export default function RegisterPage() {
                 <FormItem>
                   <FormLabel>Full Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="Jane Doe" {...field} data-testid="input-name" />
+                    <Input placeholder="Jane Doe" autoComplete="name" {...field} data-testid="input-name" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -83,7 +104,7 @@ export default function RegisterPage() {
                 <FormItem>
                   <FormLabel>Work Email</FormLabel>
                   <FormControl>
-                    <Input placeholder="jane@company.com" {...field} data-testid="input-email" />
+                    <Input placeholder="jane@company.com" autoComplete="email" {...field} data-testid="input-email" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -94,9 +115,9 @@ export default function RegisterPage() {
               name="tenant_name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Organization Name (Optional)</FormLabel>
+                  <FormLabel>Organization Name <span className="text-muted-foreground">(optional)</span></FormLabel>
                   <FormControl>
-                    <Input placeholder="Acme Corp" {...field} data-testid="input-tenant" />
+                    <Input placeholder="Acme Corp" autoComplete="organization" {...field} data-testid="input-tenant" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -109,7 +130,7 @@ export default function RegisterPage() {
                 <FormItem>
                   <FormLabel>Password</FormLabel>
                   <FormControl>
-                    <Input type="password" {...field} data-testid="input-password" />
+                    <Input type="password" autoComplete="new-password" {...field} data-testid="input-password" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -122,7 +143,7 @@ export default function RegisterPage() {
                 <FormItem>
                   <FormLabel>Confirm Password</FormLabel>
                   <FormControl>
-                    <Input type="password" {...field} data-testid="input-password-confirm" />
+                    <Input type="password" autoComplete="new-password" {...field} data-testid="input-password-confirm" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
