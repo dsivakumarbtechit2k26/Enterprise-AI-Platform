@@ -65,8 +65,9 @@ class AuthController extends Controller
 
         $user = User::where('email', strtolower($validated['email']))->first();
 
-        // Unknown user — don't reveal existence
+        // Unknown user — log attempt (null actor) then return generic 401
         if (! $user) {
+            $this->audit->logAuth('auth.login.failed', null, $request, ['reason' => 'unknown_user']);
             return $this->invalidCredentialsResponse();
         }
 
@@ -154,6 +155,9 @@ class AuthController extends Controller
 
     public function logoutAll(Request $request): JsonResponse
     {
+        // Capture user ID before any session invalidation (may become null after)
+        $userId = $request->user()->id;
+
         // Revoke all PATs
         $request->user()->tokens()->delete();
 
@@ -165,7 +169,7 @@ class AuthController extends Controller
 
         \Illuminate\Support\Facades\Auth::guard('web')->logout();
 
-        $this->audit->logAuth('auth.logout.all_sessions', $request->user()->id, $request);
+        $this->audit->logAuth('auth.logout.all_sessions', $userId, $request);
 
         return response()->json(['message' => 'All sessions terminated.']);
     }

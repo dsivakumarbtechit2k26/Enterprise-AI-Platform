@@ -54,18 +54,21 @@ class SocialAuthController extends Controller
     {
         $this->validateProvider($provider);
 
-        // Validate server-side state to prevent CSRF
+        // Validate server-side state to prevent CSRF, and verify the cached provider
+        // matches this callback's {provider} route param (strict binding)
         $state = $request->query('state');
-        if (! $state || ! Cache::has("oauth_state:{$state}")) {
+        $cachedProvider = $state ? Cache::get("oauth_state:{$state}") : null;
+
+        if (! $state || $cachedProvider === null || $cachedProvider !== $provider) {
             return response()->json([
                 'type'   => 'https://platform.local/errors/oauth-invalid-state',
                 'title'  => 'Invalid OAuth State',
                 'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-                'detail' => 'The OAuth state parameter is missing or has expired.',
+                'detail' => 'The OAuth state parameter is missing, has expired, or does not match the provider.',
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        // Consume state token (one-time use)
+        // Consume state token atomically (one-time use)
         Cache::forget("oauth_state:{$state}");
 
         try {
