@@ -93,9 +93,11 @@ class AuthController extends Controller
 
         // MFA required
         if ($user->mfa_enabled) {
-            $pending = MfaPendingSession::create([
+            $rawToken = Str::random(64);
+
+            MfaPendingSession::create([
                 'user_id'    => $user->id,
-                'token'      => Str::random(64),
+                'token'      => hash('sha256', $rawToken), // store hash, never plaintext
                 'expires_at' => now()->addMinutes(10),
             ]);
 
@@ -104,7 +106,7 @@ class AuthController extends Controller
             return response()->json([
                 'data' => [
                     'mfa_required' => true,
-                    'mfa_token'    => $pending->token,
+                    'mfa_token'    => $rawToken, // return plaintext to client
                 ],
                 'message' => 'MFA verification required.',
             ], Response::HTTP_OK);
@@ -127,8 +129,23 @@ class AuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()->delete();
-        $this->audit->logAuth('auth.logout', $request->user()->id, $request);
+        $userId = $request->user()->id;
+
+        // Revoke PAT when using Bearer token auth (currentAccessToken() is null in SPA cookie mode)
+        $pat = $request->user()->currentAccessToken();
+        if ($pat) {
+            $pat->delete();
+        }
+
+        // Invalidate session when using SPA cookie auth
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
+
+        \Illuminate\Support\Facades\Auth::guard('web')->logout();
+
+        $this->audit->logAuth('auth.logout', $userId, $request);
 
         return response()->json(['message' => 'Logged out successfully.']);
     }
@@ -137,7 +154,17 @@ class AuthController extends Controller
 
     public function logoutAll(Request $request): JsonResponse
     {
+        // Revoke all PATs
         $request->user()->tokens()->delete();
+
+        // Also invalidate session if in SPA cookie mode
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
+
+        \Illuminate\Support\Facades\Auth::guard('web')->logout();
+
         $this->audit->logAuth('auth.logout.all_sessions', $request->user()->id, $request);
 
         return response()->json(['message' => 'All sessions terminated.']);

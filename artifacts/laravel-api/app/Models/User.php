@@ -77,7 +77,7 @@ class User extends Authenticatable implements MustVerifyEmailContract
         $count = $this->failed_login_count + 1;
         $data  = ['failed_login_count' => $count];
 
-        if ($count >= 10) {
+        if ($count >= 5) {
             $data['locked_until'] = now()->addMinutes(15);
         }
 

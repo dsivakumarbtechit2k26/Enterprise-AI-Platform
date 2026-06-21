@@ -116,7 +116,7 @@ class MfaController extends Controller
             'code'      => ['required', 'string'],
         ]);
 
-        $pending = MfaPendingSession::where('token', $request->mfa_token)
+        $pending = MfaPendingSession::where('token', hash('sha256', $request->mfa_token))
             ->where('expires_at', '>', now())
             ->first();
 
