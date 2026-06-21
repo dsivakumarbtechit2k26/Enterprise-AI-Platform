@@ -22,26 +22,28 @@ import {
 import { ChevronLeft, ChevronRight, Download, Eye } from "lucide-react";
 
 export default function AdminAuditLogPage() {
-  const [tenantId, setTenantId] = useState("");
-  const [event,    setEvent]    = useState("");
-  const [from,     setFrom]     = useState("");
-  const [to,       setTo]       = useState("");
-  const [page,     setPage]     = useState(1);
-  const [detail,   setDetail]   = useState<AdminAuditLog | null>(null);
+  const [tenantId,   setTenantId]   = useState("");
+  const [event,      setEvent]      = useState("");
+  const [actorEmail, setActorEmail] = useState("");
+  const [from,       setFrom]       = useState("");
+  const [to,         setTo]         = useState("");
+  const [page,       setPage]       = useState(1);
+  const [detail,     setDetail]     = useState<AdminAuditLog | null>(null);
 
   const token = useAuthStore((s) => s.token);
 
   const params = new URLSearchParams({
     page: String(page),
     per_page: "50",
-    ...(tenantId ? { tenant_id: tenantId } : {}),
-    ...(event    ? { event }              : {}),
-    ...(from     ? { from }               : {}),
-    ...(to       ? { to }                 : {}),
+    ...(tenantId   ? { tenant_id:   tenantId   } : {}),
+    ...(event      ? { event }                   : {}),
+    ...(actorEmail ? { actor_email: actorEmail } : {}),
+    ...(from       ? { from }                    : {}),
+    ...(to         ? { to }                      : {}),
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin", "audit-logs", tenantId, event, from, to, page],
+    queryKey: ["admin", "audit-logs", tenantId, event, actorEmail, from, to, page],
     queryFn: () => adminFetch<PaginatedResponse<AdminAuditLog>>(`/audit-logs?${params}`),
     placeholderData: (prev) => prev,
   });
@@ -73,7 +75,7 @@ export default function AdminAuditLogPage() {
   };
 
   const handleFilterReset = () => {
-    setTenantId(""); setEvent(""); setFrom(""); setTo(""); setPage(1);
+    setTenantId(""); setEvent(""); setActorEmail(""); setFrom(""); setTo(""); setPage(1);
   };
 
   return (
@@ -96,7 +98,7 @@ export default function AdminAuditLogPage() {
       </div>
 
       {/* Filters */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <Input
           value={tenantId}
           onChange={(e) => { setTenantId(e.target.value); setPage(1); }}
@@ -107,6 +109,12 @@ export default function AdminAuditLogPage() {
           value={event}
           onChange={(e) => { setEvent(e.target.value); setPage(1); }}
           placeholder="Event type…"
+          className="bg-slate-800 border-white/10 text-white placeholder:text-slate-500 text-sm"
+        />
+        <Input
+          value={actorEmail}
+          onChange={(e) => { setActorEmail(e.target.value); setPage(1); }}
+          placeholder="Actor email…"
           className="bg-slate-800 border-white/10 text-white placeholder:text-slate-500 text-sm"
         />
         <Input
@@ -124,7 +132,7 @@ export default function AdminAuditLogPage() {
           title="To date"
         />
       </div>
-      {(tenantId || event || from || to) && (
+      {(tenantId || event || actorEmail || from || to) && (
         <button
           className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
           onClick={handleFilterReset}

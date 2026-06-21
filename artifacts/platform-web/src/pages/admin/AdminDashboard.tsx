@@ -163,6 +163,14 @@ export default function AdminDashboard() {
             icon={<Inbox className="w-4 h-4" />}
             loading={isLoading}
           />
+          <StatCard
+            title="Open Support Tickets"
+            value={data?.open_support_tickets ?? 0}
+            sub="Opened minus closed ticket events"
+            icon={<AlertTriangle className="w-4 h-4" />}
+            variant={data && data.open_support_tickets > 0 ? "warning" : "default"}
+            loading={isLoading}
+          />
         </div>
       </div>
     </div>

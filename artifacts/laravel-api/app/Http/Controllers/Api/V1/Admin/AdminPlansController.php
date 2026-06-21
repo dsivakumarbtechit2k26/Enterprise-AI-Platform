@@ -9,6 +9,7 @@ use App\Models\PlanFeature;
 use App\Models\SubscriptionPlan;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class AdminPlansController extends Controller
 {
@@ -63,6 +64,14 @@ class AdminPlansController extends Controller
         }
 
         $plan->load('features');
+
+        // Flush feature-gate cache so running workers pick up changes immediately
+        try {
+            Cache::tags(['plan_features'])->flush();
+        } catch (\BadMethodCallException $e) {
+            // Driver doesn't support tags (e.g. file/database) — flush per-plan key
+            Cache::forget("plan_features:{$plan->key}");
+        }
 
         return response()->json([
             'data' => array_merge(

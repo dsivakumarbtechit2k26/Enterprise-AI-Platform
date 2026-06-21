@@ -53,18 +53,32 @@ class AdminStatsController extends Controller
             ->table('jobs')
             ->count();
 
+        // Open support tickets: count opened minus closed audit events
+        $ticketsOpened = DB::connection('central')
+            ->table('audit_logs')
+            ->where('event', 'support.ticket.opened')
+            ->count();
+
+        $ticketsClosed = DB::connection('central')
+            ->table('audit_logs')
+            ->where('event', 'support.ticket.closed')
+            ->count();
+
+        $openSupportTickets = (int) max(0, $ticketsOpened - $ticketsClosed);
+
         return response()->json([
             'data' => [
-                'total_tenants'      => (int) ($tenantCounts->total     ?? 0),
-                'active_tenants'     => (int) ($tenantCounts->active    ?? 0),
-                'trial_tenants'      => (int) ($tenantCounts->trialing  ?? 0),
-                'suspended_tenants'  => (int) ($tenantCounts->suspended ?? 0),
-                'new_this_month'     => $newThisMonth,
-                'churned_this_month' => $churnedThisMonth,
-                'mrr_cents'          => (int) $mrrCents,
-                'failed_payments'    => $failedPayments,
-                'total_users'        => $totalUsers,
-                'queued_jobs'        => $queuedJobs,
+                'total_tenants'        => (int) ($tenantCounts->total     ?? 0),
+                'active_tenants'       => (int) ($tenantCounts->active    ?? 0),
+                'trial_tenants'        => (int) ($tenantCounts->trialing  ?? 0),
+                'suspended_tenants'    => (int) ($tenantCounts->suspended ?? 0),
+                'new_this_month'       => $newThisMonth,
+                'churned_this_month'   => $churnedThisMonth,
+                'mrr_cents'            => (int) $mrrCents,
+                'failed_payments'      => $failedPayments,
+                'total_users'          => $totalUsers,
+                'queued_jobs'          => $queuedJobs,
+                'open_support_tickets' => $openSupportTickets,
             ],
         ]);
     }

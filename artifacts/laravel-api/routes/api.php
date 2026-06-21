@@ -295,4 +295,10 @@ Route::prefix('v1')->group(function () {
             Route::patch('/settings', [AdminSettingsController::class, 'update'])
                 ->name('api.v1.admin.settings.update');
         });
+
+    // One-time impersonation token exchange — no admin auth required.
+    // Protected by the one-time exchange code (60s TTL, single use via Cache::pull).
+    Route::post('/admin/impersonate/exchange', [AdminTenantsController::class, 'exchange'])
+        ->middleware(['throttle:20,1'])
+        ->name('api.v1.admin.impersonate.exchange');
 });

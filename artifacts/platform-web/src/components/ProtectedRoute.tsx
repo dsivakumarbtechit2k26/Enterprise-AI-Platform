@@ -5,12 +5,15 @@ interface ProtectedRouteProps {
   redirectTo?: string;
   requiredPermission?: string;
   requiredRole?: string;
+  /** User must have at least one of these roles (OR logic). */
+  requiredRoles?: string[];
 }
 
 export function ProtectedRoute({
   redirectTo = "/login",
   requiredPermission,
   requiredRole,
+  requiredRoles,
 }: ProtectedRouteProps) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated());
   const hasPermission = useAuthStore((s) => s.hasPermission);
@@ -26,6 +29,10 @@ export function ProtectedRoute({
   }
 
   if (requiredRole && !hasRole(requiredRole)) {
+    return <Navigate to="/403" replace />;
+  }
+
+  if (requiredRoles && !requiredRoles.some((r) => hasRole(r))) {
     return <Navigate to="/403" replace />;
   }
 

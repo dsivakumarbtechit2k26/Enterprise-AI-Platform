@@ -9,6 +9,7 @@ use App\Models\AuditLog;
 use App\Models\PlatformSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Redis;
 
 class AdminSettingsController extends Controller
 {
@@ -53,6 +54,16 @@ class AdminSettingsController extends Controller
                 actorId:   $request->user()?->id,
                 ipAddress: $request->ip(),
             );
+
+            // Notify running workers to reload settings via Redis pub/sub
+            try {
+                Redis::publish('settings:updated', json_encode([
+                    'updated_keys' => array_keys($updated),
+                    'at'           => now()->toISOString(),
+                ]));
+            } catch (\Exception $e) {
+                // Non-fatal: workers will reload settings on their next request cycle
+            }
         }
 
         return response()->json([

@@ -181,10 +181,9 @@ const router = createBrowserRouter(
           ],
         },
 
-        // ── Admin routes — require tenants.view permission (assigned to both
-        //    platform-admin and super-admin central roles) ──────────────────
+        // ── Admin routes — require platform-admin or super-admin role ────────
         {
-          element: <ProtectedRoute requiredPermission="tenants.view" redirectTo="/403" />,
+          element: <ProtectedRoute requiredRoles={["platform-admin", "super-admin"]} redirectTo="/403" />,
           children: [
             {
               path: "admin",

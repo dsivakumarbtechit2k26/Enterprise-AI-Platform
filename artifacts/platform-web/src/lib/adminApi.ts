@@ -55,6 +55,7 @@ export interface AdminStats {
   failed_payments: number;
   total_users: number;
   queued_jobs: number;
+  open_support_tickets: number;
 }
 
 export interface AdminTenant {
@@ -70,12 +71,29 @@ export interface AdminTenant {
   created_at: string;
 }
 
+export interface AdminTenantQuotaUsage {
+  user_count: number;
+  max_users: number | null;
+  plan_features: Record<string, string>;
+}
+
+export interface AdminSubscriptionHistoryEvent {
+  id: number;
+  event: string;
+  actor_name: string | null;
+  old_values: Record<string, unknown> | null;
+  new_values: Record<string, unknown> | null;
+  created_at: string;
+}
+
 export interface AdminTenantDetail extends AdminTenant {
   pm_type: string | null;
   pm_last_four: string | null;
   settings: Record<string, unknown> | null;
   users: AdminTenantUser[];
   subscription: AdminSubscription | null;
+  quota_usage: AdminTenantQuotaUsage;
+  subscription_history: AdminSubscriptionHistoryEvent[];
   updated_at: string;
 }
 
@@ -83,6 +101,7 @@ export interface AdminTenantUser {
   id: number;
   name: string;
   email: string;
+  email_verified: boolean;
   role: string;
   joined_at: string | null;
 }
@@ -150,8 +169,9 @@ export interface PaginatedResponse<T> {
   };
 }
 
+/** Returned by POST /admin/tenants/{id}/impersonate — contains a one-time exchange code, NOT a token. */
 export interface ImpersonationResult {
-  token: string;
+  exchange_code: string;
   tenant_id: string;
   tenant_name: string;
   user_name: string;

@@ -6,11 +6,14 @@ namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class AdminTenantsController extends Controller
 {
@@ -78,9 +81,24 @@ class AdminTenantsController extends Controller
             ->table('user_tenants')
             ->join('users', 'user_tenants.user_id', '=', 'users.id')
             ->where('user_tenants.tenant_id', $tenantId)
-            ->select('users.id', 'users.name', 'users.email', 'user_tenants.role', 'user_tenants.joined_at')
+            ->select(
+                'users.id',
+                'users.name',
+                'users.email',
+                'users.email_verified_at',
+                'user_tenants.role',
+                'user_tenants.joined_at',
+            )
             ->orderBy('user_tenants.joined_at')
-            ->get();
+            ->get()
+            ->map(fn ($u) => [
+                'id'             => $u->id,
+                'name'           => $u->name,
+                'email'          => $u->email,
+                'email_verified' => (bool) $u->email_verified_at,
+                'role'           => $u->role,
+                'joined_at'      => $u->joined_at,
+            ]);
 
         $subscription = DB::connection('central')
             ->table('subscriptions')
@@ -88,6 +106,46 @@ class AdminTenantsController extends Controller
             ->where('subscriber_id', $tenantId)
             ->orderByDesc('created_at')
             ->first();
+
+        // ── Quota usage: compare current user count against plan limits ─────
+        $planFeatures = [];
+        $maxUsers     = null;
+        $planModel    = SubscriptionPlan::with('features')
+            ->where('key', $tenant->plan)
+            ->first();
+        if ($planModel) {
+            $planFeatures = $planModel->features_map;
+            if (isset($planFeatures['max_users'])) {
+                $maxUsers = (int) $planFeatures['max_users'];
+            }
+        }
+
+        $quotaUsage = [
+            'user_count'   => $userCount,
+            'max_users'    => $maxUsers,
+            'plan_features' => $planFeatures,
+        ];
+
+        // ── Subscription history: recent billing/plan events for this tenant ─
+        $subscriptionHistory = AuditLog::with('actor:id,name,email')
+            ->where('tenant_id', $tenantId)
+            ->where(function ($q) {
+                $q->where('event', 'LIKE', '%subscription%')
+                  ->orWhere('event', 'tenant.plan_changed')
+                  ->orWhere('event', 'LIKE', '%invoice%')
+                  ->orWhere('event', 'LIKE', '%payment%');
+            })
+            ->orderByDesc('created_at')
+            ->limit(20)
+            ->get()
+            ->map(fn ($log) => [
+                'id'         => $log->id,
+                'event'      => $log->event,
+                'actor_name' => $log->actor?->name,
+                'old_values' => $log->old_values,
+                'new_values' => $log->new_values,
+                'created_at' => $log->created_at,
+            ]);
 
         return response()->json([
             'data' => [
@@ -105,6 +163,8 @@ class AdminTenantsController extends Controller
                 'user_count'           => $userCount,
                 'users'                => $users,
                 'subscription'         => $subscription,
+                'quota_usage'          => $quotaUsage,
+                'subscription_history' => $subscriptionHistory,
                 'created_at'           => $tenant->created_at,
                 'updated_at'           => $tenant->updated_at,
             ],
@@ -161,11 +221,15 @@ class AdminTenantsController extends Controller
         ]);
     }
 
+    /**
+     * Issue a one-time exchange code (stored in cache, 60s TTL).
+     * The raw Sanctum token is NEVER returned here — only the exchange code.
+     * The frontend opens /impersonate?code=... in a new tab, which calls exchange().
+     */
     public function impersonate(Request $request, string $tenantId): JsonResponse
     {
         $tenant = Tenant::findOrFail($tenantId);
 
-        // Prefer owner, then admin
         $targetUser = DB::connection('central')
             ->table('user_tenants')
             ->join('users', 'user_tenants.user_id', '=', 'users.id')
@@ -181,13 +245,17 @@ class AdminTenantsController extends Controller
             ], 404);
         }
 
-        $user = User::findOrFail($targetUser->id);
+        // Generate a one-time exchange code — TTL 60 seconds, single use
+        $code = Str::uuid()->toString();
 
-        // Revoke any stale impersonation tokens
-        $user->tokens()->where('name', 'impersonation')->delete();
-
-        // Issue a 15-minute token
-        $token = $user->createToken('impersonation', ['*'], now()->addMinutes(15));
+        Cache::put(
+            "impersonate:exchange:{$code}",
+            [
+                'user_id'   => $targetUser->id,
+                'tenant_id' => $tenantId,
+            ],
+            now()->addSeconds(60),
+        );
 
         AuditLog::record(
             event:     'tenant.impersonated',
@@ -202,12 +270,47 @@ class AdminTenantsController extends Controller
 
         return response()->json([
             'data' => [
-                'token'       => $token->plainTextToken,
-                'tenant_id'   => $tenantId,
-                'tenant_name' => $tenant->name,
-                'user_name'   => $targetUser->name,
-                'user_email'  => $targetUser->email,
-                'expires_at'  => now()->addMinutes(15)->toISOString(),
+                'exchange_code' => $code,
+                'tenant_id'     => $tenantId,
+                'tenant_name'   => $tenant->name,
+                'user_name'     => $targetUser->name,
+                'user_email'    => $targetUser->email,
+                'expires_at'    => now()->addSeconds(60)->toISOString(),
+            ],
+        ]);
+    }
+
+    /**
+     * Redeem a one-time exchange code for a 15-minute Sanctum token.
+     * No admin auth required — protected by the one-time code TTL.
+     */
+    public function exchange(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'code' => ['required', 'string', 'uuid'],
+        ]);
+
+        // Cache::pull() atomically reads AND deletes (one-time use guarantee)
+        $data = Cache::pull("impersonate:exchange:{$validated['code']}");
+
+        if (! $data) {
+            return response()->json([
+                'message' => 'Invalid or expired exchange code.',
+            ], 403);
+        }
+
+        $user = User::findOrFail($data['user_id']);
+
+        // Revoke any stale impersonation tokens for this user
+        $user->tokens()->where('name', 'impersonation')->delete();
+
+        // Issue a 15-minute scoped token
+        $token = $user->createToken('impersonation', ['*'], now()->addMinutes(15));
+
+        return response()->json([
+            'data' => [
+                'token'      => $token->plainTextToken,
+                'expires_at' => now()->addMinutes(15)->toISOString(),
             ],
         ]);
     }

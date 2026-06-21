@@ -24,6 +24,10 @@ class AdminAuditLogController extends Controller
             $query->where('actor_id', $actorId);
         }
 
+        if ($actorEmail = $request->input('actor_email')) {
+            $query->whereHas('actor', fn ($q) => $q->where('email', 'LIKE', "%{$actorEmail}%"));
+        }
+
         if ($event = $request->input('event')) {
             $query->where('event', 'LIKE', "%{$event}%");
         }
