@@ -17,8 +17,9 @@ class AdminStatsController extends Controller
             ->selectRaw("
                 COUNT(*)                                                         AS total,
                 SUM(CASE WHEN status = 'active'    THEN 1 ELSE 0 END)           AS active,
-                SUM(CASE WHEN status = 'trialing'  THEN 1 ELSE 0 END)           AS trialing,
-                SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END)           AS suspended
+                SUM(CASE WHEN status = 'trial'     THEN 1 ELSE 0 END)           AS trial,
+                SUM(CASE WHEN status = 'suspended' THEN 1 ELSE 0 END)           AS suspended,
+                SUM(CASE WHEN status = 'expired'   THEN 1 ELSE 0 END)           AS expired
             ")
             ->first();
 
@@ -37,10 +38,11 @@ class AdminStatsController extends Controller
 
         $totalUsers = DB::connection('central')->table('users')->count();
 
-        // MRR: sum price_cents for all tenants with an active Cashier subscription
+        // MRR: sum price_cents for active subscriptions joined to plan pricing
+        // Cashier schema uses 'type' (the plan key) not 'name'
         $mrrCents = DB::connection('central')
             ->table('subscriptions')
-            ->join('subscription_plans', 'subscriptions.name', '=', 'subscription_plans.key')
+            ->join('subscription_plans', 'subscriptions.type', '=', 'subscription_plans.key')
             ->where('subscriptions.stripe_status', 'active')
             ->sum('subscription_plans.price_cents');
 
@@ -53,7 +55,7 @@ class AdminStatsController extends Controller
             ->table('jobs')
             ->count();
 
-        // Open support tickets: count opened minus closed audit events
+        // Open support tickets: opened events minus closed events
         $ticketsOpened = DB::connection('central')
             ->table('audit_logs')
             ->where('event', 'support.ticket.opened')
@@ -68,10 +70,11 @@ class AdminStatsController extends Controller
 
         return response()->json([
             'data' => [
-                'total_tenants'        => (int) ($tenantCounts->total     ?? 0),
-                'active_tenants'       => (int) ($tenantCounts->active    ?? 0),
-                'trial_tenants'        => (int) ($tenantCounts->trialing  ?? 0),
+                'total_tenants'        => (int) ($tenantCounts->total    ?? 0),
+                'active_tenants'       => (int) ($tenantCounts->active   ?? 0),
+                'trial_tenants'        => (int) ($tenantCounts->trial    ?? 0),
                 'suspended_tenants'    => (int) ($tenantCounts->suspended ?? 0),
+                'expired_tenants'      => (int) ($tenantCounts->expired  ?? 0),
                 'new_this_month'       => $newThisMonth,
                 'churned_this_month'   => $churnedThisMonth,
                 'mrr_cents'            => (int) $mrrCents,

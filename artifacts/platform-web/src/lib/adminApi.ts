@@ -49,6 +49,7 @@ export interface AdminStats {
   active_tenants: number;
   trial_tenants: number;
   suspended_tenants: number;
+  expired_tenants: number;
   new_this_month: number;
   churned_this_month: number;
   mrr_cents: number;
@@ -62,9 +63,10 @@ export interface AdminTenant {
   id: string;
   name: string;
   slug: string;
-  status: "active" | "suspended" | "trialing";
+  status: "active" | "suspended" | "trial" | "expired";
   plan: string;
   user_count: number;
+  storage_bytes: number;
   stripe_id: string | null;
   trial_ends_at: string | null;
   subscription_ends_at: string | null;
@@ -108,8 +110,14 @@ export interface AdminTenantUser {
 
 export interface AdminSubscription {
   id: number;
-  name: string;
+  /** Cashier subscription type — the plan key (column: type, not name). */
+  type: string;
+  stripe_id: string;
   stripe_status: string;
+  stripe_price: string | null;
+  quantity: number | null;
+  trial_ends_at: string | null;
+  ends_at: string | null;
   created_at: string;
 }
 
@@ -169,7 +177,7 @@ export interface PaginatedResponse<T> {
   };
 }
 
-/** Returned by POST /admin/tenants/{id}/impersonate — contains a one-time exchange code, NOT a token. */
+/** Returned by POST /admin/tenants/{id}/impersonate — contains a one-time exchange code, NOT a bearer token. */
 export interface ImpersonationResult {
   exchange_code: string;
   tenant_id: string;

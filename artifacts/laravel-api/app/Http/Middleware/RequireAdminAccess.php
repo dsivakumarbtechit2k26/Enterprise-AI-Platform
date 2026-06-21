@@ -15,12 +15,12 @@ class RequireAdminAccess
 
     public function handle(Request $request, Closure $next): Response
     {
-        // Force team context to 'central' so Spatie looks up platform-level roles.
+        // Force team context to 'central' so Spatie looks up platform-level permissions.
         $this->registrar->setPermissionsTeamId('central');
 
         $user = $request->user();
 
-        if (! $user || ! $user->hasAnyRole(['super-admin', 'platform-admin'])) {
+        if (! $user || ! $user->hasPermissionTo('platform.admin')) {
             return response()->json([
                 'type'   => 'https://platform.local/errors/forbidden',
                 'title'  => 'Forbidden',

@@ -93,7 +93,7 @@ export default function AdminDashboard() {
             loading={isLoading}
           />
           <StatCard
-            title="Trialing"
+            title="Trial"
             value={data?.trial_tenants ?? 0}
             icon={<TrendingUp className="w-4 h-4" />}
             variant="warning"
@@ -104,6 +104,13 @@ export default function AdminDashboard() {
             value={data?.suspended_tenants ?? 0}
             icon={<AlertTriangle className="w-4 h-4" />}
             variant="danger"
+            loading={isLoading}
+          />
+          <StatCard
+            title="Expired"
+            value={data?.expired_tenants ?? 0}
+            icon={<TrendingDown className="w-4 h-4" />}
+            variant={data && data.expired_tenants > 0 ? "danger" : "default"}
             loading={isLoading}
           />
         </div>

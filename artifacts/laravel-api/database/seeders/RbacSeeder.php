@@ -55,6 +55,7 @@ class RbacSeeder extends Seeder
             ['name' => 'platform-admin', 'guard_name' => $guard, 'team_id' => self::CENTRAL_TEAM]
         );
         $platformAdmin->syncPermissions([
+            'platform.admin',
             'tenants.view', 'tenants.create', 'tenants.update', 'tenants.delete',
             'billing.view', 'billing.manage',
             'platform_settings.view', 'platform_settings.update',
@@ -114,6 +115,7 @@ class RbacSeeder extends Seeder
         $permissions[] = 'platform_settings.view';
         $permissions[] = 'platform_settings.update';
         $permissions[] = 'audit_logs.view';
+        $permissions[] = 'platform.admin';
 
         return $permissions;
     }

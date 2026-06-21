@@ -181,9 +181,9 @@ const router = createBrowserRouter(
           ],
         },
 
-        // ── Admin routes — require platform-admin or super-admin role ────────
+        // ── Admin routes — require platform.admin permission ─────────────────
         {
-          element: <ProtectedRoute requiredRoles={["platform-admin", "super-admin"]} redirectTo="/403" />,
+          element: <ProtectedRoute requiredPermission="platform.admin" redirectTo="/403" />,
           children: [
             {
               path: "admin",

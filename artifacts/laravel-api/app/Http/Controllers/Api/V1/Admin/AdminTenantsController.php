@@ -44,6 +44,18 @@ class AdminTenantsController extends Controller
             ->orderBy('tenants.created_at', 'desc')
             ->paginate((int) $request->input('per_page', 20));
 
+        // Fetch all tenant schema sizes in a single PostgreSQL catalog query
+        $rawSizes = DB::connection('central')->select("
+            SELECT n.nspname AS schema_name,
+                   COALESCE(SUM(pg_total_relation_size(c.oid)), 0)::bigint AS storage_bytes
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname NOT LIKE 'pg_%'
+              AND n.nspname NOT IN ('information_schema', 'public', 'central', 'topology')
+            GROUP BY n.nspname
+        ");
+        $schemaSizes = collect($rawSizes)->pluck('storage_bytes', 'schema_name');
+
         $items = collect($paginator->items())->map(fn ($t) => [
             'id'                   => $t->id,
             'name'                 => $t->name,
@@ -51,6 +63,7 @@ class AdminTenantsController extends Controller
             'status'               => $t->status,
             'plan'                 => $t->plan,
             'user_count'           => (int) $t->user_count,
+            'storage_bytes'        => (int) $schemaSizes->get($t->id, 0),
             'stripe_id'            => $t->stripe_id,
             'trial_ends_at'        => $t->trial_ends_at,
             'subscription_ends_at' => $t->subscription_ends_at,
@@ -100,14 +113,27 @@ class AdminTenantsController extends Controller
                 'joined_at'      => $u->joined_at,
             ]);
 
+        // Cashier schema: billable_type / billable_id / type (not subscriber_* / name)
         $subscription = DB::connection('central')
             ->table('subscriptions')
-            ->where('subscriber_type', Tenant::class)
-            ->where('subscriber_id', $tenantId)
+            ->where('billable_type', Tenant::class)
+            ->where('billable_id', $tenantId)
             ->orderByDesc('created_at')
             ->first();
 
-        // ── Quota usage: compare current user count against plan limits ─────
+        $subscriptionData = $subscription ? [
+            'id'            => $subscription->id,
+            'type'          => $subscription->type,
+            'stripe_id'     => $subscription->stripe_id,
+            'stripe_status' => $subscription->stripe_status,
+            'stripe_price'  => $subscription->stripe_price,
+            'quantity'      => $subscription->quantity,
+            'trial_ends_at' => $subscription->trial_ends_at,
+            'ends_at'       => $subscription->ends_at,
+            'created_at'    => $subscription->created_at,
+        ] : null;
+
+        // ── Quota usage: user count vs plan limits ───────────────────────────
         $planFeatures = [];
         $maxUsers     = null;
         $planModel    = SubscriptionPlan::with('features')
@@ -121,12 +147,12 @@ class AdminTenantsController extends Controller
         }
 
         $quotaUsage = [
-            'user_count'   => $userCount,
-            'max_users'    => $maxUsers,
+            'user_count'    => $userCount,
+            'max_users'     => $maxUsers,
             'plan_features' => $planFeatures,
         ];
 
-        // ── Subscription history: recent billing/plan events for this tenant ─
+        // ── Subscription history: recent billing/plan audit events ───────────
         $subscriptionHistory = AuditLog::with('actor:id,name,email')
             ->where('tenant_id', $tenantId)
             ->where(function ($q) {
@@ -161,8 +187,9 @@ class AdminTenantsController extends Controller
                 'subscription_ends_at' => $tenant->subscription_ends_at,
                 'settings'             => $tenant->settings,
                 'user_count'           => $userCount,
+                'storage_bytes'        => 0,
                 'users'                => $users,
-                'subscription'         => $subscription,
+                'subscription'         => $subscriptionData,
                 'quota_usage'          => $quotaUsage,
                 'subscription_history' => $subscriptionHistory,
                 'created_at'           => $tenant->created_at,
@@ -174,7 +201,7 @@ class AdminTenantsController extends Controller
     public function updateStatus(Request $request, string $tenantId): JsonResponse
     {
         $validated = $request->validate([
-            'status' => ['required', 'string', 'in:active,suspended,trialing'],
+            'status' => ['required', 'string', 'in:active,suspended,trial,expired'],
         ]);
 
         $tenant    = Tenant::findOrFail($tenantId);
@@ -224,7 +251,6 @@ class AdminTenantsController extends Controller
     /**
      * Issue a one-time exchange code (stored in cache, 60s TTL).
      * The raw Sanctum token is NEVER returned here — only the exchange code.
-     * The frontend opens /impersonate?code=... in a new tab, which calls exchange().
      */
     public function impersonate(Request $request, string $tenantId): JsonResponse
     {
@@ -245,7 +271,7 @@ class AdminTenantsController extends Controller
             ], 404);
         }
 
-        // Generate a one-time exchange code — TTL 60 seconds, single use
+        // One-time exchange code — TTL 60 seconds, single use via Cache::pull
         $code = Str::uuid()->toString();
 
         Cache::put(
@@ -290,7 +316,7 @@ class AdminTenantsController extends Controller
             'code' => ['required', 'string', 'uuid'],
         ]);
 
-        // Cache::pull() atomically reads AND deletes (one-time use guarantee)
+        // Atomically reads and deletes (one-time use guarantee)
         $data = Cache::pull("impersonate:exchange:{$validated['code']}");
 
         if (! $data) {
@@ -301,10 +327,8 @@ class AdminTenantsController extends Controller
 
         $user = User::findOrFail($data['user_id']);
 
-        // Revoke any stale impersonation tokens for this user
         $user->tokens()->where('name', 'impersonation')->delete();
 
-        // Issue a 15-minute scoped token
         $token = $user->createToken('impersonation', ['*'], now()->addMinutes(15));
 
         return response()->json([

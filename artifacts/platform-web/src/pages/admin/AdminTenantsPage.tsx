@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { adminFetch, type AdminTenant, type PaginatedResponse } from "@/lib/adminApi";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -25,9 +24,18 @@ import { Search, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 
 const STATUS_BADGE: Record<string, string> = {
   active:    "bg-emerald-400/10 text-emerald-400 border-emerald-400/20",
-  trialing:  "bg-amber-400/10  text-amber-400  border-amber-400/20",
+  trial:     "bg-amber-400/10  text-amber-400  border-amber-400/20",
   suspended: "bg-red-400/10    text-red-400    border-red-400/20",
+  expired:   "bg-slate-400/10  text-slate-400  border-slate-400/20",
 };
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "—";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
 
 export default function AdminTenantsPage() {
   const [search, setSearch]   = useState("");
@@ -38,7 +46,7 @@ export default function AdminTenantsPage() {
   const params = new URLSearchParams({
     page: String(page),
     per_page: "20",
-    ...(search  ? { search }        : {}),
+    ...(search  ? { search }          : {}),
     ...(status !== "all" ? { status } : {}),
     ...(plan   !== "all" ? { plan }   : {}),
   });
@@ -86,8 +94,9 @@ export default function AdminTenantsPage() {
             <SelectContent>
               <SelectItem value="all">All statuses</SelectItem>
               <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="trialing">Trialing</SelectItem>
+              <SelectItem value="trial">Trial</SelectItem>
               <SelectItem value="suspended">Suspended</SelectItem>
+              <SelectItem value="expired">Expired</SelectItem>
             </SelectContent>
           </Select>
 
@@ -116,6 +125,7 @@ export default function AdminTenantsPage() {
               <TableHead className="text-slate-400">Status</TableHead>
               <TableHead className="text-slate-400">Plan</TableHead>
               <TableHead className="text-slate-400 text-right">Users</TableHead>
+              <TableHead className="text-slate-400 text-right hidden lg:table-cell">Storage</TableHead>
               <TableHead className="text-slate-400">Created</TableHead>
               <TableHead className="text-slate-400 w-10" />
             </TableRow>
@@ -128,6 +138,7 @@ export default function AdminTenantsPage() {
                     <TableCell><Skeleton className="h-4 w-20 bg-slate-800" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-28 bg-slate-800" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-10 bg-slate-800 ml-auto" /></TableCell>
+                    <TableCell className="hidden lg:table-cell"><Skeleton className="h-4 w-16 bg-slate-800 ml-auto" /></TableCell>
                     <TableCell><Skeleton className="h-4 w-24 bg-slate-800" /></TableCell>
                     <TableCell />
                   </TableRow>
@@ -149,6 +160,9 @@ export default function AdminTenantsPage() {
                       <span className="text-slate-300 text-sm">{t.plan}</span>
                     </TableCell>
                     <TableCell className="text-right text-slate-300 text-sm">{t.user_count}</TableCell>
+                    <TableCell className="text-right text-slate-500 text-sm hidden lg:table-cell">
+                      {formatBytes(t.storage_bytes)}
+                    </TableCell>
                     <TableCell className="text-slate-500 text-sm">
                       {t.created_at ? new Date(t.created_at).toLocaleDateString() : "—"}
                     </TableCell>

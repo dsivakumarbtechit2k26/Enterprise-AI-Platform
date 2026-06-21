@@ -57,8 +57,9 @@ import {
 
 const STATUS_BADGE: Record<string, string> = {
   active:    "bg-emerald-400/10 text-emerald-400 border-emerald-400/20",
-  trialing:  "bg-amber-400/10  text-amber-400  border-amber-400/20",
+  trial:     "bg-amber-400/10  text-amber-400  border-amber-400/20",
   suspended: "bg-red-400/10    text-red-400    border-red-400/20",
+  expired:   "bg-slate-400/10  text-slate-400  border-slate-400/20",
 };
 
 const PLANS = [
@@ -401,8 +402,10 @@ export default function AdminTenantDetailPage() {
               <div className="grid grid-cols-2 gap-4">
                 {[
                   ["Stripe Status", tenant.subscription.stripe_status],
-                  ["Plan Key",      tenant.subscription.name],
+                  ["Plan Key",      tenant.subscription.type],
+                  ["Stripe Price",  tenant.subscription.stripe_price ?? "—"],
                   ["Created",       new Date(tenant.subscription.created_at).toLocaleDateString()],
+                  ...(tenant.subscription.ends_at ? [["Ends At", new Date(tenant.subscription.ends_at).toLocaleDateString()]] : []),
                 ].map(([label, value]) => (
                   <div key={label}>
                     <p className="text-xs text-slate-500 mb-0.5">{label}</p>
