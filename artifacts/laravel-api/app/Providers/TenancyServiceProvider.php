@@ -101,10 +101,19 @@ class TenancyServiceProvider extends ServiceProvider
 
     protected function mapRoutes(): void
     {
+        // Use X-Tenant-ID header (or ?tenant= query param) for API tenant resolution
+        \Stancl\Tenancy\Middleware\InitializeTenancyByRequestData::$header = 'X-Tenant-ID';
+
         $this->app->booted(function () {
             if (file_exists(base_path('routes/tenant.php'))) {
                 Route::namespace(static::$controllerNamespace)
                     ->group(base_path('routes/tenant.php'));
+            }
+
+            // Tenant-scoped API routes — resolved via X-Tenant-ID header
+            if (file_exists(base_path('routes/tenant_api.php'))) {
+                Route::namespace(static::$controllerNamespace)
+                    ->group(base_path('routes/tenant_api.php'));
             }
         });
     }

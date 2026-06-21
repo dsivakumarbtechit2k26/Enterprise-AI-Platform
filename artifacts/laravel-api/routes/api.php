@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\TenantController;
 use App\Http\Controllers\Api\V1\PlatformController;
+use App\Http\Middleware\EnsurePlatformAdminKey;
 
 /*
 |--------------------------------------------------------------------------
@@ -25,8 +26,10 @@ Route::prefix('v1')->group(function () {
     // Platform info (public)
     Route::get('/platform/plans', [PlatformController::class, 'plans'])->name('api.v1.platform.plans');
 
-    // Tenant provisioning (called internally / by admin)
-    Route::post('/tenants', [TenantController::class, 'store'])->name('api.v1.tenants.store');
-    Route::get('/tenants/{tenant}', [TenantController::class, 'show'])->name('api.v1.tenants.show');
+    // Tenant management — admin-only (requires X-Platform-Key + throttled)
+    Route::middleware(['throttle:20,1', EnsurePlatformAdminKey::class])->group(function () {
+        Route::post('/tenants', [TenantController::class, 'store'])->name('api.v1.tenants.store');
+        Route::get('/tenants/{tenant}', [TenantController::class, 'show'])->name('api.v1.tenants.show');
+    });
 
 });
