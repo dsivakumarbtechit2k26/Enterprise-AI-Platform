@@ -117,14 +117,21 @@ class BillingController extends Controller
     }
 
     // ── GET /billing/invoices/{id}/download ───────────────────────────────────
-    // Uses the custom InvoiceService + dompdf Blade template for branded PDFs.
+    // Generates a branded PDF, persists it to storage, and returns a signed
+    // temporary URL (15 min) pointing to the serve endpoint. The client
+    // follows the URL to download the actual PDF.
 
-    public function downloadInvoice(Request $request, string $invoiceId): Response|JsonResponse
+    public function downloadInvoice(Request $request, string $invoiceId): JsonResponse
     {
         $tenant = $this->resolveTenant($request);
 
         try {
-            return $this->invoices->downloadPdf($tenant, $invoiceId);
+            $url = $this->invoices->generateSignedUrl($tenant, $invoiceId);
+
+            return response()->json([
+                'url'        => $url,
+                'expires_in' => 900,
+            ]);
         } catch (\Throwable $e) {
             Log::warning('BillingController@downloadInvoice failed', [
                 'tenant_id'  => $tenant->id,
@@ -133,6 +140,15 @@ class BillingController extends Controller
             ]);
             return response()->json(['message' => 'Invoice not found.'], 404);
         }
+    }
+
+    // ── GET /billing/invoices/{tenantId}/{invoiceId}/serve ────────────────────
+    // Serves the stored PDF. Protected by Laravel signed URL middleware —
+    // no auth token required; the signed URL itself is the credential.
+
+    public function serveInvoicePdf(Request $request, string $tenantId, string $invoiceId): Response
+    {
+        return $this->invoices->serveFromStorage($tenantId, $invoiceId);
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────

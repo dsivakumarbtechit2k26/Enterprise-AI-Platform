@@ -73,11 +73,11 @@ Route::prefix('v1')->group(function () {
     });
 
     // ── Auth — authenticated ───────────────────────────────────────────────────
-    // tenant.permissions runs on every authenticated route: it resolves the
-    // active team context from the X-Tenant-ID header (or defaults to 'central')
-    // so that the CheckPermission middleware alias is always team-scoped and
-    // ready to use on any protected endpoint across /api/v1/.
-    Route::middleware(['auth:sanctum', 'account.not.locked', 'tenant.permissions'])->group(function () {
+    // tenant.permissions resolves the active team context from X-Tenant-ID so
+    // permission middleware is always team-scoped on every endpoint.
+    // check_quota enforces per-tenant API call, user, and storage limits on
+    // every authenticated request, based on the active subscription plan.
+    Route::middleware(['auth:sanctum', 'account.not.locked', 'tenant.permissions', 'check_quota'])->group(function () {
 
         // Session
         Route::post('/auth/logout', [AuthController::class, 'logout'])
@@ -166,17 +166,18 @@ Route::prefix('v1')->group(function () {
             ->middleware('permission:roles.assign')
             ->name('api.v1.rbac.roles.remove');
 
-        // Field permissions
+        // Field permissions — premium plan feature (ai_features gate) + RBAC permission guard.
+        // Field-level access control is only available on Professional and above plans.
         Route::get('/roles/{roleId}/field-permissions', [FieldPermissionController::class, 'index'])
-            ->middleware('permission:field_permissions.manage')
+            ->middleware(['plan_feature:ai_features', 'permission:field_permissions.manage'])
             ->name('api.v1.rbac.field_permissions.index');
 
         Route::put('/roles/{roleId}/field-permissions', [FieldPermissionController::class, 'upsert'])
-            ->middleware('permission:field_permissions.manage')
+            ->middleware(['plan_feature:ai_features', 'permission:field_permissions.manage'])
             ->name('api.v1.rbac.field_permissions.upsert');
 
         Route::delete('/roles/{roleId}/field-permissions/{fieldPermId}', [FieldPermissionController::class, 'destroy'])
-            ->middleware('permission:field_permissions.manage')
+            ->middleware(['plan_feature:ai_features', 'permission:field_permissions.manage'])
             ->name('api.v1.rbac.field_permissions.destroy');
     });
 
@@ -206,6 +207,13 @@ Route::prefix('v1')->group(function () {
                 ->middleware('permission:billing.view')
                 ->name('api.v1.billing.invoices.download');
         });
+
+    // ── Invoice PDF serve — signed temporary URL, no auth required ───────────
+    // The download endpoint generates a signed URL pointing here.
+    // Laravel ValidateSignature middleware verifies the signature + expiry.
+    Route::get('/billing/invoices/{tenantId}/{invoiceId}/serve', [BillingController::class, 'serveInvoicePdf'])
+        ->middleware('signed')
+        ->name('api.v1.billing.invoices.serve');
 
     // ── Stripe webhook — no auth, Cashier verifies signature ─────────────────
     Route::post('/stripe/webhook', [StripeWebhookController::class, 'handleWebhook'])

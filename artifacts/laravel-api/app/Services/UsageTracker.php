@@ -4,28 +4,41 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Redis;
 
+/**
+ * Tracks per-tenant resource usage.
+ *
+ * API call counters and storage figures are stored in the Laravel cache
+ * (configured via CACHE_STORE — defaults to 'database', works with any driver).
+ * Active-user counts are read directly from the DB.
+ */
 class UsageTracker
 {
-    // ── API call counters (Redis) ─────────────────────────────────────────────
+    // ── API call counters ─────────────────────────────────────────────────────
 
     public function incrementApiCalls(string $tenantId): void
     {
         $key = $this->apiCallsKey($tenantId);
-        Redis::incr($key);
-        Redis::expireat($key, $this->endOfMonth());
+        $ttl = $this->ttlToEndOfMonth();
+
+        if (Cache::has($key)) {
+            Cache::increment($key);
+        } else {
+            Cache::put($key, 1, $ttl);
+        }
     }
 
     public function getApiCallsThisMonth(string $tenantId): int
     {
-        return (int) (Redis::get($this->apiCallsKey($tenantId)) ?? 0);
+        return (int) (Cache::get($this->apiCallsKey($tenantId), 0));
     }
 
     public function resetApiCalls(string $tenantId): void
     {
-        Redis::del($this->apiCallsKey($tenantId));
+        Cache::forget($this->apiCallsKey($tenantId));
     }
 
     // ── Active user count (DB) ────────────────────────────────────────────────
@@ -39,16 +52,16 @@ class UsageTracker
             ->count();
     }
 
-    // ── Storage (placeholder — real impl would query object storage) ──────────
+    // ── Storage tracking ──────────────────────────────────────────────────────
 
     public function getStorageGb(string $tenantId): float
     {
-        return (float) (Redis::get($this->storageKey($tenantId)) ?? 0);
+        return (float) Cache::get($this->storageKey($tenantId), 0);
     }
 
     public function setStorageGb(string $tenantId, float $gb): void
     {
-        Redis::set($this->storageKey($tenantId), $gb);
+        Cache::put($this->storageKey($tenantId), $gb, Carbon::now()->addYear());
     }
 
     // ── Key helpers ───────────────────────────────────────────────────────────
@@ -64,8 +77,8 @@ class UsageTracker
         return "usage:{$tenantId}:storage_gb";
     }
 
-    private function endOfMonth(): int
+    private function ttlToEndOfMonth(): int
     {
-        return now()->endOfMonth()->addSecond()->timestamp;
+        return max(1, (int) now()->endOfMonth()->addSecond()->diffInSeconds(now()));
     }
 }

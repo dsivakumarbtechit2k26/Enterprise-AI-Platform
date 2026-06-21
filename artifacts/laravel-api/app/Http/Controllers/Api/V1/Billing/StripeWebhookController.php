@@ -201,6 +201,44 @@ class StripeWebhookController extends WebhookController
         return $this->successMethod();
     }
 
+    // ── payment_intent.payment_failed ────────────────────────────────────────
+    //
+    // Fires when a PaymentIntent permanently fails (distinct from
+    // invoice.payment_failed, which covers subscription renewals).
+    // Common sources: off-session payments, Setup Intent confirmations,
+    // one-time charges. We log the failure and flag the tenant for follow-up.
+
+    public function handlePaymentIntentPaymentFailed(array $payload): Response
+    {
+        $intent   = $payload['data']['object'];
+        $stripeId = $intent['customer'] ?? null;
+
+        if (! $stripeId) {
+            return $this->successMethod();
+        }
+
+        $tenant = Tenant::where('stripe_id', $stripeId)->first();
+
+        if (! $tenant) {
+            return $this->successMethod();
+        }
+
+        $lastError = $intent['last_payment_error'] ?? [];
+
+        Log::warning('Stripe: payment_intent.payment_failed', [
+            'tenant_id'       => $tenant->id,
+            'payment_intent'  => $intent['id'],
+            'error_code'      => $lastError['code'] ?? null,
+            'error_message'   => $lastError['message'] ?? null,
+            'amount'          => $intent['amount'] ?? null,
+            'currency'        => $intent['currency'] ?? null,
+        ]);
+
+        $this->billing->bustPlanCache($tenant->id);
+
+        return $this->successMethod();
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private function planKeyFromPriceId(?string $priceId): ?string
