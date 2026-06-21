@@ -124,7 +124,7 @@ Route::prefix('v1')->group(function () {
                 ->middleware('permission:permissions.view')
                 ->name('api.v1.rbac.permissions.index');
 
-            Route::get('/permissions/{id}', [PermissionController::class, 'show'])
+            Route::get('/permissions/{permissionId}', [PermissionController::class, 'show'])
                 ->middleware('permission:permissions.view')
                 ->name('api.v1.rbac.permissions.show');
 
@@ -145,23 +145,23 @@ Route::prefix('v1')->group(function () {
                 ->middleware('permission:roles.create')
                 ->name('api.v1.rbac.roles.store');
 
-            Route::get('/roles/{id}', [RoleController::class, 'show'])
+            Route::get('/roles/{roleId}', [RoleController::class, 'show'])
                 ->middleware('permission:roles.view')
                 ->name('api.v1.rbac.roles.show');
 
-            Route::patch('/roles/{id}', [RoleController::class, 'update'])
+            Route::patch('/roles/{roleId}', [RoleController::class, 'update'])
                 ->middleware('permission:roles.update')
                 ->name('api.v1.rbac.roles.update');
 
-            Route::delete('/roles/{id}', [RoleController::class, 'destroy'])
+            Route::delete('/roles/{roleId}', [RoleController::class, 'destroy'])
                 ->middleware('permission:roles.delete')
                 ->name('api.v1.rbac.roles.destroy');
 
-            Route::post('/roles/{id}/assign', [RoleController::class, 'assignToUser'])
+            Route::post('/roles/{roleId}/assign', [RoleController::class, 'assignToUser'])
                 ->middleware('permission:roles.assign')
                 ->name('api.v1.rbac.roles.assign');
 
-            Route::post('/roles/{id}/remove', [RoleController::class, 'removeFromUser'])
+            Route::post('/roles/{roleId}/remove', [RoleController::class, 'removeFromUser'])
                 ->middleware('permission:roles.assign')
                 ->name('api.v1.rbac.roles.remove');
 
@@ -174,7 +174,7 @@ Route::prefix('v1')->group(function () {
                 ->middleware('permission:field_permissions.manage')
                 ->name('api.v1.rbac.field_permissions.upsert');
 
-            Route::delete('/roles/{roleId}/field-permissions/{fpId}', [FieldPermissionController::class, 'destroy'])
+            Route::delete('/roles/{roleId}/field-permissions/{fieldPermId}', [FieldPermissionController::class, 'destroy'])
                 ->middleware('permission:field_permissions.manage')
                 ->name('api.v1.rbac.field_permissions.destroy');
         });

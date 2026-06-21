@@ -5,7 +5,7 @@
     "description": "Enterprise Application Platform & AI Operating System",
     "license": "MIT",
     "require": {
-        "php": "^8.3",
+        "php": "^8.4",
         "bacon/bacon-qr-code": "^3.1",
         "barryvdh/laravel-dompdf": "^3.1",
         "laravel/fortify": "^1.37",
