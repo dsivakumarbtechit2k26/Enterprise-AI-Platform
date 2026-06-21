@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use Database\Seeders\TenantRbacSeeder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class TenantController extends Controller
@@ -24,24 +25,28 @@ class TenantController extends Controller
 
         $slug = $validated['slug'] ?? Str::slug($validated['name']);
 
-        $tenant = Tenant::create([
-            'id'     => $slug,
-            'name'   => $validated['name'],
-            'slug'   => $slug,
-            'plan'   => $validated['plan'] ?? 'free',
-            'status' => 'active',
-            'data'   => [
-                'owner_email' => $validated['email'],
-                'created_via' => 'api',
-            ],
-        ]);
+        // Wrap tenant creation + RBAC bootstrap in a transaction.
+        // If role seeding fails, the tenant record is rolled back — preventing
+        // orphaned tenants with no default roles/permissions.
+        $tenant = DB::connection('central')->transaction(function () use ($validated, $slug) {
+            $tenant = Tenant::create([
+                'id'     => $slug,
+                'name'   => $validated['name'],
+                'slug'   => $slug,
+                'plan'   => $validated['plan'] ?? 'free',
+                'status' => 'active',
+                'data'   => [
+                    'owner_email' => $validated['email'],
+                    'created_via' => 'api',
+                ],
+            ]);
 
-        // Seed tenant-scoped RBAC roles (tenant-admin, manager, member, viewer)
-        try {
+            // Seed tenant-scoped RBAC roles (tenant-admin, manager, member, viewer).
+            // Any failure here aborts and rolls back the tenant creation.
             (new TenantRbacSeeder())->run($tenant->id);
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("TenantRbacSeeder failed for tenant [{$tenant->id}]: {$e->getMessage()}");
-        }
+
+            return $tenant;
+        });
 
         return response()->json([
             'data' => [

@@ -7,9 +7,9 @@ namespace App\Http\Controllers\Api\V1\Rbac;
 use App\Http\Controllers\Controller;
 use App\Models\Permission;
 use App\Models\User;
+use App\Services\RbacAuditLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Spatie\Permission\PermissionRegistrar;
 
 class PermissionController extends Controller
 {
@@ -75,15 +75,30 @@ class PermissionController extends Controller
 
     public function grantToUser(Request $request): JsonResponse
     {
+        $teamId = $request->attributes->get('active_tenant_id');
+        $actor  = $request->user();
+
         $validated = $request->validate([
-            'user_id'     => ['required', 'integer', 'exists:central.users,id'],
-            'permissions' => ['required', 'array', 'min:1'],
+            'user_id'       => ['required', 'integer', 'exists:central.users,id'],
+            'permissions'   => ['required', 'array', 'min:1'],
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
         $user = User::findOrFail($validated['user_id']);
         // Team context already set by middleware
         $user->givePermissionTo($validated['permissions']);
+
+        RbacAuditLogger::log(
+            actorId:       $actor->id,
+            event:         'permission.granted',
+            auditableType: User::class,
+            auditableId:   $user->id,
+            tenantId:      $teamId,
+            newValues:     [
+                'permissions' => $validated['permissions'],
+                'granted_by'  => $actor->id,
+            ],
+        );
 
         return response()->json([
             'message'     => 'Permissions granted.',
@@ -95,9 +110,12 @@ class PermissionController extends Controller
 
     public function revokeFromUser(Request $request): JsonResponse
     {
+        $teamId = $request->attributes->get('active_tenant_id');
+        $actor  = $request->user();
+
         $validated = $request->validate([
-            'user_id'     => ['required', 'integer', 'exists:central.users,id'],
-            'permissions' => ['required', 'array', 'min:1'],
+            'user_id'       => ['required', 'integer', 'exists:central.users,id'],
+            'permissions'   => ['required', 'array', 'min:1'],
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
@@ -106,6 +124,18 @@ class PermissionController extends Controller
         foreach ($validated['permissions'] as $perm) {
             $user->revokePermissionTo($perm);
         }
+
+        RbacAuditLogger::log(
+            actorId:       $actor->id,
+            event:         'permission.revoked',
+            auditableType: User::class,
+            auditableId:   $user->id,
+            tenantId:      $teamId,
+            oldValues:     [
+                'permissions' => $validated['permissions'],
+                'revoked_by'  => $actor->id,
+            ],
+        );
 
         return response()->json([
             'message'     => 'Permissions revoked.',

@@ -7,11 +7,10 @@ namespace App\Http\Controllers\Api\V1\Rbac;
 use App\Http\Controllers\Controller;
 use App\Models\Role;
 use App\Models\User;
-use Database\Seeders\TenantRbacSeeder;
+use App\Services\RbacAuditLogger;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Spatie\Permission\Models\Permission;
-use Spatie\Permission\PermissionRegistrar;
 
 class RoleController extends Controller
 {
@@ -22,8 +21,8 @@ class RoleController extends Controller
         $teamId = $request->attributes->get('active_tenant_id');
 
         $roles = Role::where(function ($q) use ($teamId) {
-            $q->whereNull('team_id');
-            if ($teamId) {
+            $q->where('team_id', RbacSeeder::CENTRAL_TEAM);
+            if ($teamId && $teamId !== RbacSeeder::CENTRAL_TEAM) {
                 $q->orWhere('team_id', $teamId);
             }
         })
@@ -39,6 +38,7 @@ class RoleController extends Controller
     public function store(Request $request): JsonResponse
     {
         $teamId = $request->attributes->get('active_tenant_id');
+        $actor  = $request->user();
 
         $validated = $request->validate([
             'name'        => ['required', 'string', 'max:100'],
@@ -56,6 +56,18 @@ class RoleController extends Controller
         if (! empty($validated['permissions'])) {
             $role->syncPermissions($validated['permissions']);
         }
+
+        RbacAuditLogger::log(
+            actorId:       $actor->id,
+            event:         'role.created',
+            auditableType: Role::class,
+            auditableId:   $role->id,
+            tenantId:      $teamId,
+            newValues:     [
+                'name'        => $role->name,
+                'permissions' => $validated['permissions'] ?? [],
+            ],
+        );
 
         return response()->json([
             'data'    => $this->formatRole($role->fresh('permissions')),
@@ -76,7 +88,9 @@ class RoleController extends Controller
 
     public function update(Request $request, int $roleId): JsonResponse
     {
-        $role = $this->findRole($roleId, $request->attributes->get('active_tenant_id'));
+        $teamId = $request->attributes->get('active_tenant_id');
+        $actor  = $request->user();
+        $role   = $this->findRole($roleId, $teamId);
 
         if (in_array($role->name, ['super-admin', 'platform-admin', 'tenant-admin'])) {
             return response()->json([
@@ -91,6 +105,11 @@ class RoleController extends Controller
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
+        $oldValues = [
+            'name'        => $role->name,
+            'permissions' => $role->permissions->pluck('name')->toArray(),
+        ];
+
         if (isset($validated['name'])) {
             $role->update(['name' => $validated['name']]);
         }
@@ -99,8 +118,23 @@ class RoleController extends Controller
             $role->syncPermissions($validated['permissions'] ?? []);
         }
 
+        $role->refresh()->load('permissions');
+
+        RbacAuditLogger::log(
+            actorId:       $actor->id,
+            event:         'role.updated',
+            auditableType: Role::class,
+            auditableId:   $role->id,
+            tenantId:      $teamId,
+            oldValues:     $oldValues,
+            newValues:     [
+                'name'        => $role->name,
+                'permissions' => $role->permissions->pluck('name')->toArray(),
+            ],
+        );
+
         return response()->json([
-            'data'    => $this->formatRole($role->fresh('permissions')),
+            'data'    => $this->formatRole($role),
             'message' => 'Role updated.',
         ]);
     }
@@ -109,7 +143,9 @@ class RoleController extends Controller
 
     public function destroy(Request $request, int $roleId): JsonResponse
     {
-        $role = $this->findRole($roleId, $request->attributes->get('active_tenant_id'));
+        $teamId = $request->attributes->get('active_tenant_id');
+        $actor  = $request->user();
+        $role   = $this->findRole($roleId, $teamId);
 
         if (in_array($role->name, ['super-admin', 'platform-admin', 'tenant-admin', 'manager', 'member', 'viewer'])) {
             return response()->json([
@@ -118,7 +154,17 @@ class RoleController extends Controller
             ], 422);
         }
 
+        $roleName = $role->name;
         $role->delete();
+
+        RbacAuditLogger::log(
+            actorId:       $actor->id,
+            event:         'role.deleted',
+            auditableType: Role::class,
+            auditableId:   $roleId,
+            tenantId:      $teamId,
+            oldValues:     ['name' => $roleName],
+        );
 
         return response()->json(['message' => 'Role deleted.']);
     }
@@ -128,6 +174,7 @@ class RoleController extends Controller
     public function assignToUser(Request $request, int $roleId): JsonResponse
     {
         $teamId = $request->attributes->get('active_tenant_id');
+        $actor  = $request->user();
         $role   = $this->findRole($roleId, $teamId);
 
         $validated = $request->validate([
@@ -138,6 +185,15 @@ class RoleController extends Controller
         // Team context already set by middleware
         $user->assignRole($role);
 
+        RbacAuditLogger::log(
+            actorId:       $actor->id,
+            event:         'role.assigned',
+            auditableType: User::class,
+            auditableId:   $user->id,
+            tenantId:      $teamId,
+            newValues:     ['role' => $role->name, 'assigned_by' => $actor->id],
+        );
+
         return response()->json(['message' => "Role '{$role->name}' assigned to user."]);
     }
 
@@ -146,6 +202,7 @@ class RoleController extends Controller
     public function removeFromUser(Request $request, int $roleId): JsonResponse
     {
         $teamId = $request->attributes->get('active_tenant_id');
+        $actor  = $request->user();
         $role   = $this->findRole($roleId, $teamId);
 
         $validated = $request->validate([
@@ -156,6 +213,15 @@ class RoleController extends Controller
         // Team context already set by middleware
         $user->removeRole($role);
 
+        RbacAuditLogger::log(
+            actorId:       $actor->id,
+            event:         'role.revoked',
+            auditableType: User::class,
+            auditableId:   $user->id,
+            tenantId:      $teamId,
+            oldValues:     ['role' => $role->name, 'revoked_by' => $actor->id],
+        );
+
         return response()->json(['message' => "Role '{$role->name}' removed from user."]);
     }
 
@@ -165,8 +231,8 @@ class RoleController extends Controller
     {
         return Role::where('id', $roleId)
             ->where(function ($q) use ($teamId) {
-                $q->whereNull('team_id');
-                if ($teamId) {
+                $q->where('team_id', RbacSeeder::CENTRAL_TEAM);
+                if ($teamId && $teamId !== RbacSeeder::CENTRAL_TEAM) {
                     $q->orWhere('team_id', $teamId);
                 }
             })

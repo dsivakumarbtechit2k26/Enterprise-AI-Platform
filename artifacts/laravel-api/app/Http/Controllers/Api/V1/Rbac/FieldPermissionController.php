@@ -7,6 +7,8 @@ namespace App\Http\Controllers\Api\V1\Rbac;
 use App\Http\Controllers\Controller;
 use App\Models\FieldPermission;
 use App\Models\Role;
+use App\Services\RbacAuditLogger;
+use Database\Seeders\RbacSeeder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -20,7 +22,8 @@ class FieldPermissionController extends Controller
         $role   = $this->findRole($roleId, $teamId);
 
         $fieldPerms = FieldPermission::where('role_id', $role->id)
-            ->where(fn ($q) => $q->whereNull('team_id')->orWhere('team_id', $teamId))
+            ->where(fn ($q) => $q->where('team_id', RbacSeeder::CENTRAL_TEAM)
+                ->orWhere('team_id', $teamId))
             ->orderBy('model_class')
             ->orderBy('field_name')
             ->get();
@@ -33,6 +36,7 @@ class FieldPermissionController extends Controller
     public function upsert(Request $request, int $roleId): JsonResponse
     {
         $teamId = $request->attributes->get('active_tenant_id');
+        $actor  = $request->user();
         $role   = $this->findRole($roleId, $teamId);
 
         $validated = $request->validate([
@@ -41,6 +45,16 @@ class FieldPermissionController extends Controller
             'can_read'    => ['required', 'boolean'],
             'can_write'   => ['required', 'boolean'],
         ]);
+
+        $existing = FieldPermission::where('role_id', $role->id)
+            ->where('model_class', $validated['model_class'])
+            ->where('field_name', $validated['field_name'])
+            ->where('team_id', $teamId)
+            ->first();
+
+        $oldValues = $existing
+            ? ['can_read' => $existing->can_read, 'can_write' => $existing->can_write]
+            : [];
 
         $fp = FieldPermission::updateOrCreate(
             [
@@ -55,6 +69,22 @@ class FieldPermissionController extends Controller
             ]
         );
 
+        RbacAuditLogger::log(
+            actorId:       $actor->id,
+            event:         $existing ? 'field_permission.updated' : 'field_permission.created',
+            auditableType: FieldPermission::class,
+            auditableId:   $fp->id,
+            tenantId:      $teamId,
+            oldValues:     $oldValues,
+            newValues:     [
+                'role_id'     => $role->id,
+                'model_class' => $validated['model_class'],
+                'field_name'  => $validated['field_name'],
+                'can_read'    => $validated['can_read'],
+                'can_write'   => $validated['can_write'],
+            ],
+        );
+
         return response()->json([
             'data'    => $fp,
             'message' => 'Field permission saved.',
@@ -66,14 +96,32 @@ class FieldPermissionController extends Controller
     public function destroy(Request $request, int $roleId, int $fieldPermId): JsonResponse
     {
         $teamId = $request->attributes->get('active_tenant_id');
+        $actor  = $request->user();
         $this->findRole($roleId, $teamId);
 
         $fp = FieldPermission::where('id', $fieldPermId)
             ->where('role_id', $roleId)
-            ->where(fn ($q) => $q->whereNull('team_id')->orWhere('team_id', $teamId))
+            ->where(fn ($q) => $q->where('team_id', RbacSeeder::CENTRAL_TEAM)
+                ->orWhere('team_id', $teamId))
             ->firstOrFail();
 
+        $oldValues = [
+            'model_class' => $fp->model_class,
+            'field_name'  => $fp->field_name,
+            'can_read'    => $fp->can_read,
+            'can_write'   => $fp->can_write,
+        ];
+
         $fp->delete();
+
+        RbacAuditLogger::log(
+            actorId:       $actor->id,
+            event:         'field_permission.deleted',
+            auditableType: FieldPermission::class,
+            auditableId:   $fieldPermId,
+            tenantId:      $teamId,
+            oldValues:     $oldValues,
+        );
 
         return response()->json(['message' => 'Field permission deleted.']);
     }
@@ -83,7 +131,8 @@ class FieldPermissionController extends Controller
     private function findRole(int $roleId, ?string $teamId): Role
     {
         return Role::where('id', $roleId)
-            ->where(fn ($q) => $q->whereNull('team_id')->orWhere('team_id', $teamId))
+            ->where(fn ($q) => $q->where('team_id', RbacSeeder::CENTRAL_TEAM)
+                ->orWhere('team_id', $teamId))
             ->firstOrFail();
     }
 }

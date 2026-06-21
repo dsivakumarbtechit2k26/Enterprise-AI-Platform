@@ -71,7 +71,11 @@ Route::prefix('v1')->group(function () {
     });
 
     // ── Auth — authenticated ───────────────────────────────────────────────────
-    Route::middleware(['auth:sanctum', 'account.not.locked'])->group(function () {
+    // tenant.permissions runs on every authenticated route: it resolves the
+    // active team context from the X-Tenant-ID header (or defaults to 'central')
+    // so that the CheckPermission middleware alias is always team-scoped and
+    // ready to use on any protected endpoint across /api/v1/.
+    Route::middleware(['auth:sanctum', 'account.not.locked', 'tenant.permissions'])->group(function () {
 
         // Session
         Route::post('/auth/logout', [AuthController::class, 'logout'])
@@ -107,8 +111,9 @@ Route::prefix('v1')->group(function () {
         });
 
         // ── RBAC — tenant-scoped ───────────────────────────────────────────────
-        // Requires X-Tenant-ID header; resolves and scopes all permission checks.
-        Route::middleware(['tenant.permissions'])->prefix('rbac')->group(function () {
+        // tenant.permissions is already on the parent group; RBAC routes just
+        // add per-route permission guards via the permission: middleware alias.
+        Route::prefix('rbac')->group(function () {
 
             // Current user's permissions in active tenant
             Route::get('/my-permissions', [PermissionController::class, 'userPermissions'])
