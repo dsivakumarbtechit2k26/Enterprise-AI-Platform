@@ -35,6 +35,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission'         => \App\Http\Middleware\CheckPermission::class,
             'role'               => \App\Http\Middleware\CheckRole::class,
             'tenant.permissions' => \App\Http\Middleware\ResolveTenantPermissions::class,
+            'plan_feature'       => \App\Http\Middleware\CheckPlanFeature::class,
+            'check_quota'        => \App\Http\Middleware\CheckQuota::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

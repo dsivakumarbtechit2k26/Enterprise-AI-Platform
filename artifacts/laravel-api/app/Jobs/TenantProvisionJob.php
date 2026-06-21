@@ -24,7 +24,7 @@ class TenantProvisionJob implements ShouldQueue
         public readonly array  $ownerData = [],
     ) {}
 
-    public function handle(): void
+    public function handle(\App\Services\BillingService $billing): void
     {
         $tenant = Tenant::find($this->tenantId);
 
@@ -38,14 +38,25 @@ class TenantProvisionJob implements ShouldQueue
             'name'      => $tenant->name,
         ]);
 
-        // Tenancy will create the schema and run migrations automatically
-        // via the TenancyServiceProvider events (CreateDatabase → MigrateDatabase).
-        // This job handles any additional post-provision work.
+        // 1. Create Stripe customer (gracefully skips if Stripe not configured)
+        try {
+            $billing->ensureStripeCustomer($tenant);
+        } catch (\Throwable $e) {
+            Log::warning('TenantProvisionJob: Stripe customer creation skipped', [
+                'tenant_id' => $this->tenantId,
+                'reason'    => $e->getMessage(),
+            ]);
+        }
 
+        // 2. Assign free plan
+        $billing->assignFreePlan($tenant);
+
+        // 3. Activate tenant
         $tenant->update(['status' => 'active']);
 
         Log::info('TenantProvisionJob: tenant provisioned successfully', [
             'tenant_id' => $this->tenantId,
+            'plan'      => 'free',
         ]);
     }
 

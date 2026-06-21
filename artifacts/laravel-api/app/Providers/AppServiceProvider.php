@@ -2,7 +2,10 @@
 
 namespace App\Providers;
 
+use App\Console\Commands\CreateStripePlansCommand;
 use App\Console\Commands\MakeTenantPolicyCommand;
+use App\Console\Commands\ResetUsageCountersCommand;
+use App\Models\TenantSubscription;
 use App\Models\User;
 use App\Observers\UserRoleObserver;
 use Database\Seeders\RbacSeeder;
@@ -10,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Cashier\Cashier;
 use Spatie\Permission\PermissionRegistrar;
 
 class AppServiceProvider extends ServiceProvider
@@ -17,6 +21,9 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(\App\Services\PlatformSettingsService::class);
+        $this->app->singleton(\App\Services\BillingService::class);
+        $this->app->singleton(\App\Services\UsageTracker::class);
+        $this->app->singleton(\App\Services\InvoiceService::class);
     }
 
     public function boot(): void
@@ -46,9 +53,17 @@ class AppServiceProvider extends ServiceProvider
         // Register observer for User role pivot events
         User::observe(UserRoleObserver::class);
 
+        // Configure Cashier to use our polymorphic TenantSubscription model
+        Cashier::useSubscriptionModel(TenantSubscription::class);
+
+        // Point Cashier at the Tenant model (not User)
+        Cashier::useCustomerModel(\App\Models\Tenant::class);
+
         if ($this->app->runningInConsole()) {
             $this->commands([
                 MakeTenantPolicyCommand::class,
+                CreateStripePlansCommand::class,
+                ResetUsageCountersCommand::class,
             ]);
         }
     }

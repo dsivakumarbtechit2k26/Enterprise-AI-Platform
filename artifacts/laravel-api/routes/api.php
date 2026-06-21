@@ -9,6 +9,8 @@ use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SocialAuthController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\PlatformController;
+use App\Http\Controllers\Api\V1\Billing\BillingController;
+use App\Http\Controllers\Api\V1\Billing\StripeWebhookController;
 use App\Http\Controllers\Api\V1\Rbac\FieldPermissionController;
 use App\Http\Controllers\Api\V1\Rbac\PermissionController;
 use App\Http\Controllers\Api\V1\Rbac\RoleController;
@@ -177,6 +179,31 @@ Route::prefix('v1')->group(function () {
             ->middleware('permission:field_permissions.manage')
             ->name('api.v1.rbac.field_permissions.destroy');
     });
+
+    // ── Billing — authenticated tenant routes ─────────────────────────────────
+    Route::middleware(['auth:sanctum', 'account.not.locked', 'tenant.permissions'])
+        ->prefix('billing')
+        ->group(function () {
+            Route::get('/subscription', [BillingController::class, 'subscription'])
+                ->name('api.v1.billing.subscription');
+
+            Route::post('/checkout', [BillingController::class, 'checkout'])
+                ->name('api.v1.billing.checkout');
+
+            Route::post('/portal', [BillingController::class, 'portal'])
+                ->name('api.v1.billing.portal');
+
+            Route::get('/invoices', [BillingController::class, 'invoiceList'])
+                ->name('api.v1.billing.invoices.index');
+
+            Route::get('/invoices/{invoiceId}/download', [BillingController::class, 'downloadInvoice'])
+                ->name('api.v1.billing.invoices.download');
+        });
+
+    // ── Stripe webhook — no auth, Cashier verifies signature ─────────────────
+    Route::post('/stripe/webhook', [StripeWebhookController::class, 'handleWebhook'])
+        ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class])
+        ->name('api.v1.stripe.webhook');
 
     // ── Platform admin (requires X-Platform-Key) ──────────────────────────────
     Route::middleware(['throttle:20,1', EnsurePlatformAdminKey::class])->group(function () {
