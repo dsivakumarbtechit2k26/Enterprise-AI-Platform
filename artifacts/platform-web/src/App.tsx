@@ -181,6 +181,82 @@ const router = createBrowserRouter(
           ],
         },
 
+        // ── Admin routes — require tenants.view permission (assigned to both
+        //    platform-admin and super-admin central roles) ──────────────────
+        {
+          element: <ProtectedRoute requiredPermission="tenants.view" redirectTo="/403" />,
+          children: [
+            {
+              path: "admin",
+              lazy: async () => {
+                const { AdminShell } = await import("@/layouts/AdminShell");
+                return { Component: AdminShell };
+              },
+              errorElement: <RouteErrorBoundary />,
+              children: [
+                {
+                  index: true,
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/admin/AdminDashboard");
+                    return { Component: Page };
+                  },
+                },
+                {
+                  path: "tenants",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/admin/AdminTenantsPage");
+                    return { Component: Page };
+                  },
+                },
+                {
+                  path: "tenants/:tenantId",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/admin/AdminTenantDetailPage");
+                    return { Component: Page };
+                  },
+                },
+                {
+                  path: "plans",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/admin/AdminPlansPage");
+                    return { Component: Page };
+                  },
+                },
+                {
+                  path: "users",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/admin/AdminUsersPage");
+                    return { Component: Page };
+                  },
+                },
+                {
+                  path: "audit-logs",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/admin/AdminAuditLogPage");
+                    return { Component: Page };
+                  },
+                },
+                {
+                  path: "settings",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/admin/AdminSettingsPage");
+                    return { Component: Page };
+                  },
+                },
+              ],
+            },
+          ],
+        },
+
+        // ── Impersonate callback (set token + redirect to /) ─────────────
+        {
+          path: "impersonate",
+          lazy: async () => {
+            const { default: Page } = await import("@/pages/auth/ImpersonateCallbackPage");
+            return { Component: Page };
+          },
+        },
+
         // ── Error pages ─────────────────────────────────────────────────────
         {
           path: "403",

@@ -26,6 +26,34 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
+// ── Impersonation banner ──────────────────────────────────────────────────────
+
+interface ImpersonationInfo {
+  tenantName: string;
+  userName: string;
+  startedAt: string;
+}
+
+function ImpersonationBanner({ onExit }: { onExit: () => void }) {
+  const raw = sessionStorage.getItem("impersonating");
+  if (!raw) return null;
+  let info: ImpersonationInfo;
+  try { info = JSON.parse(raw); } catch { return null; }
+  return (
+    <div className="bg-amber-500 text-amber-950 text-sm font-semibold flex items-center justify-between px-4 py-2 shrink-0 z-50">
+      <span>
+        Impersonating <strong>{info.tenantName}</strong> as {info.userName}
+      </span>
+      <button
+        onClick={onExit}
+        className="text-xs underline underline-offset-2 hover:no-underline ml-4 font-bold"
+      >
+        Exit Session
+      </button>
+    </div>
+  );
+}
+
 // ── Nav item definition ───────────────────────────────────────────────────────
 
 interface NavItem {
@@ -109,13 +137,14 @@ export function AppShell() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const logoutMutation = useLogout();
-  const [mobileOpen, setMobileOpen]         = useState(false);
+  const [mobileOpen, setMobileOpen]             = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isImpersonating, setIsImpersonating]   = useState(
+    () => !!sessionStorage.getItem("impersonating"),
+  );
   const notifiedIds = useRef<Set<string>>(new Set());
 
   // ── Hydrate user/tenant/permissions ──────────────────────────────────────
-  // Gate on token (not activeTenantId) so OAuth callbacks — which set token
-  // but leave user/tenant null — still trigger the /me fetch.
 
   const { data: meData } = useGetMe({
     query: {
@@ -190,6 +219,14 @@ export function AppShell() {
         navigate("/login");
       },
     });
+  };
+
+  // ── Exit impersonation ────────────────────────────────────────────────────
+
+  const handleExitImpersonation = () => {
+    sessionStorage.removeItem("impersonating");
+    clearAuth();
+    navigate("/login");
   };
 
   // ── Tenant switcher header content ────────────────────────────────────────
@@ -296,214 +333,221 @@ export function AppShell() {
   );
 
   return (
-    <div className="flex h-screen bg-muted/20">
-      {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
-      <aside
-        className={`${
-          sidebarCollapsed ? "w-16" : "w-64"
-        } bg-sidebar border-r flex-col hidden md:flex transition-all duration-200 shrink-0`}
-      >
-        {tenantHeader}
-        <NavLinks
-          items={navItems}
-          currentPath={location.pathname}
-          collapsed={sidebarCollapsed}
-        />
-        {sidebarFooter}
-      </aside>
+    <div className="flex flex-col h-screen">
+      {/* Impersonation banner — visible at the very top when impersonating */}
+      {isImpersonating && (
+        <ImpersonationBanner onExit={handleExitImpersonation} />
+      )}
 
-      {/* ── Mobile drawer ───────────────────────────────────────────────── */}
-      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="p-0 w-64 bg-sidebar flex flex-col">
-          <SheetHeader className="sr-only">
-            <SheetTitle>Navigation</SheetTitle>
-          </SheetHeader>
-          {mobileSidebarContent}
-        </SheetContent>
-      </Sheet>
+      <div className="flex flex-1 bg-muted/20 min-h-0">
+        {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
+        <aside
+          className={`${
+            sidebarCollapsed ? "w-16" : "w-64"
+          } bg-sidebar border-r flex-col hidden md:flex transition-all duration-200 shrink-0`}
+        >
+          {tenantHeader}
+          <NavLinks
+            items={navItems}
+            currentPath={location.pathname}
+            collapsed={sidebarCollapsed}
+          />
+          {sidebarFooter}
+        </aside>
 
-      {/* ── Main content ────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0">
+        {/* ── Mobile drawer ───────────────────────────────────────────────── */}
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <SheetContent side="left" className="p-0 w-64 bg-sidebar flex flex-col">
+            <SheetHeader className="sr-only">
+              <SheetTitle>Navigation</SheetTitle>
+            </SheetHeader>
+            {mobileSidebarContent}
+          </SheetContent>
+        </Sheet>
 
-        {/* Header */}
-        <header className="h-16 bg-card border-b flex items-center justify-between px-4 sm:px-6 z-10 shrink-0 gap-3">
+        {/* ── Main content ────────────────────────────────────────────────── */}
+        <div className="flex-1 flex flex-col min-w-0">
 
-          {/* Left: mobile menu + breadcrumbs */}
-          <div className="flex items-center gap-2 min-w-0">
-            {/* Mobile menu trigger */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="md:hidden shrink-0"
-              onClick={() => setMobileOpen(true)}
-              aria-label="Open navigation"
-            >
-              <Menu className="w-5 h-5" />
-            </Button>
+          {/* Header */}
+          <header className="h-16 bg-card border-b flex items-center justify-between px-4 sm:px-6 z-10 shrink-0 gap-3">
 
-            {/* Breadcrumb trail (desktop) */}
-            <nav className="hidden md:flex items-center gap-1 text-sm min-w-0" aria-label="Breadcrumb">
-              <Link
-                to="/"
-                className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+            {/* Left: mobile menu + breadcrumbs */}
+            <div className="flex items-center gap-2 min-w-0">
+              {/* Mobile menu trigger */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden shrink-0"
+                onClick={() => setMobileOpen(true)}
+                aria-label="Open navigation"
               >
-                Dashboard
-              </Link>
-              {breadcrumbs.map((crumb, i) => (
-                <span key={crumb.path} className="flex items-center gap-1 min-w-0">
-                  <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
-                  {i === breadcrumbs.length - 1 ? (
-                    <span className="font-medium text-foreground truncate">{crumb.label}</span>
-                  ) : (
-                    <Link
-                      to={crumb.path}
-                      className="text-muted-foreground hover:text-foreground transition-colors truncate"
-                    >
-                      {crumb.label}
-                    </Link>
-                  )}
-                </span>
-              ))}
-            </nav>
+                <Menu className="w-5 h-5" />
+              </Button>
 
-            {/* Tenant name (mobile) */}
-            <span className="md:hidden font-semibold truncate">{tenant?.name || "Platform"}</span>
-          </div>
+              {/* Breadcrumb trail (desktop) */}
+              <nav className="hidden md:flex items-center gap-1 text-sm min-w-0" aria-label="Breadcrumb">
+                <Link
+                  to="/"
+                  className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                >
+                  Dashboard
+                </Link>
+                {breadcrumbs.map((crumb, i) => (
+                  <span key={crumb.path} className="flex items-center gap-1 min-w-0">
+                    <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                    {i === breadcrumbs.length - 1 ? (
+                      <span className="font-medium text-foreground truncate">{crumb.label}</span>
+                    ) : (
+                      <Link
+                        to={crumb.path}
+                        className="text-muted-foreground hover:text-foreground transition-colors truncate"
+                      >
+                        {crumb.label}
+                      </Link>
+                    )}
+                  </span>
+                ))}
+              </nav>
 
-          {/* Right: search + notifications + user menu */}
-          <div className="flex items-center gap-2 shrink-0">
-
-            {/* Search bar */}
-            <div className="relative hidden lg:flex items-center">
-              <Search className="absolute left-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
-              <Input
-                type="search"
-                placeholder="Search…"
-                className="pl-8 h-8 w-48 xl:w-64 bg-muted/50 border-muted text-sm"
-                aria-label="Search"
-              />
+              {/* Tenant name (mobile) */}
+              <span className="md:hidden font-semibold truncate">{tenant?.name || "Platform"}</span>
             </div>
 
-            {/* ── Notification bell ──────────────────────────────────── */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
-                  <Bell className="w-5 h-5 text-muted-foreground" />
-                  {unreadCount > 0 && (
-                    <Badge
-                      variant="destructive"
-                      className="absolute -top-1 -right-1 h-5 min-w-5 px-1 text-[10px] flex items-center justify-center"
-                    >
-                      {unreadCount > 9 ? "9+" : unreadCount}
-                    </Badge>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-80" forceMount>
-                <div className="flex items-center justify-between px-3 py-2 border-b">
-                  <span className="text-sm font-semibold">Notifications</span>
-                  {unreadCount > 0 && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 text-xs text-muted-foreground"
-                      onClick={() => markAllRead()}
-                    >
-                      <CheckCheck className="w-3 h-3 mr-1" /> Mark all read
-                    </Button>
-                  )}
-                </div>
-                <ScrollArea className="h-80">
-                  {notifications.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-32 text-muted-foreground text-sm">
-                      <Bell className="w-8 h-8 mb-2 opacity-30" />
-                      No notifications yet
-                    </div>
-                  ) : (
-                    notifications.slice(0, 20).map((n) => (
-                      <div
-                        key={n.id}
-                        className={`px-3 py-2.5 border-b last:border-0 cursor-pointer hover:bg-muted/50 transition-colors ${
-                          !n.read ? "bg-primary/5" : ""
-                        }`}
-                        onClick={() => markRead(n.id)}
+            {/* Right: search + notifications + user menu */}
+            <div className="flex items-center gap-2 shrink-0">
+
+              {/* Search bar */}
+              <div className="relative hidden lg:flex items-center">
+                <Search className="absolute left-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  type="search"
+                  placeholder="Search…"
+                  className="pl-8 h-8 w-48 xl:w-64 bg-muted/50 border-muted text-sm"
+                  aria-label="Search"
+                />
+              </div>
+
+              {/* ── Notification bell ──────────────────────────────────── */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
+                    <Bell className="w-5 h-5 text-muted-foreground" />
+                    {unreadCount > 0 && (
+                      <Badge
+                        variant="destructive"
+                        className="absolute -top-1 -right-1 h-5 min-w-5 px-1 text-[10px] flex items-center justify-center"
                       >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-sm font-medium truncate ${!n.read ? "text-foreground" : "text-muted-foreground"}`}>
-                              {n.title}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                              {n.body}
-                            </p>
-                          </div>
-                          <div className="flex flex-col items-end gap-1 shrink-0">
-                            <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                              {formatNotificationTime(n.created_at)}
-                            </span>
-                            {!n.read && (
-                              <span className="w-2 h-2 rounded-full bg-primary" />
-                            )}
+                        {unreadCount > 9 ? "9+" : unreadCount}
+                      </Badge>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80" forceMount>
+                  <div className="flex items-center justify-between px-3 py-2 border-b">
+                    <span className="text-sm font-semibold">Notifications</span>
+                    {unreadCount > 0 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs text-muted-foreground"
+                        onClick={() => markAllRead()}
+                      >
+                        <CheckCheck className="w-3 h-3 mr-1" /> Mark all read
+                      </Button>
+                    )}
+                  </div>
+                  <ScrollArea className="h-80">
+                    {notifications.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center h-32 text-muted-foreground text-sm">
+                        <Bell className="w-8 h-8 mb-2 opacity-30" />
+                        No notifications yet
+                      </div>
+                    ) : (
+                      notifications.slice(0, 20).map((n) => (
+                        <div
+                          key={n.id}
+                          className={`px-3 py-2.5 border-b last:border-0 cursor-pointer hover:bg-muted/50 transition-colors ${
+                            !n.read ? "bg-primary/5" : ""
+                          }`}
+                          onClick={() => markRead(n.id)}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className={`text-sm font-medium truncate ${!n.read ? "text-foreground" : "text-muted-foreground"}`}>
+                                {n.title}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
+                                {n.body}
+                              </p>
+                            </div>
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                                {formatNotificationTime(n.created_at)}
+                              </span>
+                              {!n.read && (
+                                <span className="w-2 h-2 rounded-full bg-primary" />
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))
-                  )}
-                </ScrollArea>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                      ))
+                    )}
+                  </ScrollArea>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-            {/* ── User avatar dropdown ───────────────────────────────── */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                  <Avatar className="h-8 w-8 border">
-                    <AvatarImage src={user?.avatar ?? undefined} />
-                    <AvatarFallback>{user?.name ? getInitials(user.name) : "U"}</AvatarFallback>
-                  </Avatar>
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56" align="end" forceMount>
-                <DropdownMenuLabel className="font-normal">
-                  <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">{user?.name ?? "Loading…"}</p>
-                    <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
-                  </div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem asChild>
-                  <Link to="/settings/profile" className="w-full flex items-center cursor-pointer">
-                    <UserCircle className="w-4 h-4 mr-2" /> Profile
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/settings/security" className="w-full flex items-center cursor-pointer">
-                    <Shield className="w-4 h-4 mr-2" /> Security
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link to="/settings/billing" className="w-full flex items-center cursor-pointer">
-                    <CreditCard className="w-4 h-4 mr-2" /> Billing
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive cursor-pointer"
-                  onClick={handleLogout}
-                >
-                  <LogOut className="w-4 h-4 mr-2" /> Log out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </header>
+              {/* ── User avatar dropdown ───────────────────────────────── */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                    <Avatar className="h-8 w-8 border">
+                      <AvatarImage src={user?.avatar ?? undefined} />
+                      <AvatarFallback>{user?.name ? getInitials(user.name) : "U"}</AvatarFallback>
+                    </Avatar>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent className="w-56" align="end" forceMount>
+                  <DropdownMenuLabel className="font-normal">
+                    <div className="flex flex-col space-y-1">
+                      <p className="text-sm font-medium leading-none">{user?.name ?? "Loading…"}</p>
+                      <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
+                    </div>
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/settings/profile" className="w-full flex items-center cursor-pointer">
+                      <UserCircle className="w-4 h-4 mr-2" /> Profile
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/settings/security" className="w-full flex items-center cursor-pointer">
+                      <Shield className="w-4 h-4 mr-2" /> Security
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link to="/settings/billing" className="w-full flex items-center cursor-pointer">
+                      <CreditCard className="w-4 h-4 mr-2" /> Billing
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive cursor-pointer"
+                    onClick={handleLogout}
+                  >
+                    <LogOut className="w-4 h-4 mr-2" /> Log out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-auto p-4 sm:p-8">
-          <div className="max-w-6xl mx-auto">
-            <Outlet />
-          </div>
-        </main>
+          {/* Page content */}
+          <main className="flex-1 overflow-auto p-4 sm:p-8">
+            <div className="max-w-6xl mx-auto">
+              <Outlet />
+            </div>
+          </main>
+        </div>
       </div>
     </div>
   );

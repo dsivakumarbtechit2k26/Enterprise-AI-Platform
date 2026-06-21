@@ -31,6 +31,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'account.not.locked' => \App\Http\Middleware\EnsureAccountNotLocked::class,
             'platform.admin'     => \App\Http\Middleware\EnsurePlatformAdminKey::class,
+            'require.admin'      => \App\Http\Middleware\RequireAdminAccess::class,
             'auth'               => \App\Http\Middleware\Authenticate::class,
             'permission'         => \App\Http\Middleware\CheckPermission::class,
             'role'               => \App\Http\Middleware\CheckRole::class,

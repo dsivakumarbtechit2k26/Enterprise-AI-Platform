@@ -16,6 +16,12 @@ use App\Http\Controllers\Api\V1\Rbac\PermissionController;
 use App\Http\Controllers\Api\V1\Rbac\RoleController;
 use App\Http\Controllers\Api\V1\TenantController;
 use App\Http\Controllers\Api\V1\Tenant\TenantSettingsController;
+use App\Http\Controllers\Api\V1\Admin\AdminStatsController;
+use App\Http\Controllers\Api\V1\Admin\AdminTenantsController;
+use App\Http\Controllers\Api\V1\Admin\AdminUsersController;
+use App\Http\Controllers\Api\V1\Admin\AdminPlansController;
+use App\Http\Controllers\Api\V1\Admin\AdminAuditLogController;
+use App\Http\Controllers\Api\V1\Admin\AdminSettingsController;
 use App\Http\Middleware\EnsurePlatformAdminKey;
 use Illuminate\Support\Facades\Route;
 
@@ -234,4 +240,59 @@ Route::prefix('v1')->group(function () {
         Route::get('/tenants/{tenant}', [TenantController::class, 'show'])
             ->name('api.v1.tenants.show');
     });
+
+    // ── Authenticated super-admin / platform-admin routes ─────────────────────
+    // Protected by auth:sanctum + RequireAdminAccess (sets team=central and
+    // checks for the super-admin or platform-admin role).
+    // Note: tenant.permissions / check_quota are intentionally omitted —
+    // admin users operate in the central scope, not in a tenant context.
+    Route::middleware(['auth:sanctum', 'account.not.locked', 'require.admin', 'throttle:60,1'])
+        ->prefix('admin')
+        ->group(function () {
+
+            // KPI dashboard stats
+            Route::get('/stats', [AdminStatsController::class, 'index'])
+                ->name('api.v1.admin.stats');
+
+            // Tenant management
+            Route::get('/tenants', [AdminTenantsController::class, 'index'])
+                ->name('api.v1.admin.tenants.index');
+
+            Route::get('/tenants/{tenantId}', [AdminTenantsController::class, 'show'])
+                ->name('api.v1.admin.tenants.show');
+
+            Route::patch('/tenants/{tenantId}/status', [AdminTenantsController::class, 'updateStatus'])
+                ->name('api.v1.admin.tenants.status');
+
+            Route::patch('/tenants/{tenantId}/plan', [AdminTenantsController::class, 'changePlan'])
+                ->name('api.v1.admin.tenants.plan');
+
+            Route::post('/tenants/{tenantId}/impersonate', [AdminTenantsController::class, 'impersonate'])
+                ->name('api.v1.admin.tenants.impersonate');
+
+            // Cross-tenant user management
+            Route::get('/users', [AdminUsersController::class, 'index'])
+                ->name('api.v1.admin.users.index');
+
+            Route::post('/users/{userId}/reset-password', [AdminUsersController::class, 'resetPassword'])
+                ->name('api.v1.admin.users.reset_password');
+
+            // Subscription plan management
+            Route::get('/plans', [AdminPlansController::class, 'index'])
+                ->name('api.v1.admin.plans.index');
+
+            Route::patch('/plans/{planId}', [AdminPlansController::class, 'update'])
+                ->name('api.v1.admin.plans.update');
+
+            // Audit log viewer + CSV export
+            Route::get('/audit-logs', [AdminAuditLogController::class, 'index'])
+                ->name('api.v1.admin.audit_logs.index');
+
+            // Platform settings
+            Route::get('/settings', [AdminSettingsController::class, 'index'])
+                ->name('api.v1.admin.settings.index');
+
+            Route::patch('/settings', [AdminSettingsController::class, 'update'])
+                ->name('api.v1.admin.settings.update');
+        });
 });
