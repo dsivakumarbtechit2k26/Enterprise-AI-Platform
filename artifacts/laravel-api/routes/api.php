@@ -54,6 +54,11 @@ Route::prefix('v1')->group(function () {
             ->middleware('throttle:10,1')
             ->name('api.v1.auth.email_otp.verify');
 
+        // Email verification (signed URL sent in registration email)
+        Route::get('/email/verify/{id}/{hash}', [AuthController::class, 'verifyEmail'])
+            ->middleware(['signed', 'throttle:6,1'])
+            ->name('verification.verify');
+
         // OAuth
         Route::get('/social/{provider}', [SocialAuthController::class, 'redirect'])
             ->name('api.v1.auth.social.redirect');

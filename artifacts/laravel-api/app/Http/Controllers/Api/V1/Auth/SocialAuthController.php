@@ -10,6 +10,8 @@ use App\Models\User;
 use App\Services\AuditService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Laravel\Socialite\Facades\Socialite;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -17,17 +19,26 @@ class SocialAuthController extends Controller
 {
     private const ALLOWED_PROVIDERS = ['google', 'github'];
 
+    // State tokens expire in 10 minutes (one-time use)
+    private const STATE_TTL_MINUTES = 10;
+
     public function __construct(private readonly AuditService $audit) {}
 
     // ── GET /api/v1/auth/social/{provider} ────────────────────────────────────
-    // Returns the OAuth redirect URL for the client to use.
+    // Returns the OAuth redirect URL for the client. Generates a server-side
+    // state token stored in cache to prevent CSRF on the callback.
 
     public function redirect(Request $request, string $provider): JsonResponse
     {
         $this->validateProvider($provider);
 
+        // Generate a random state token and store it in cache
+        $state = Str::random(40);
+        Cache::put("oauth_state:{$state}", $provider, now()->addMinutes(self::STATE_TTL_MINUTES));
+
         $url = Socialite::driver($provider)
             ->stateless()
+            ->with(['state' => $state])
             ->redirect()
             ->getTargetUrl();
 
@@ -35,11 +46,26 @@ class SocialAuthController extends Controller
     }
 
     // ── GET /api/v1/auth/social/{provider}/callback ───────────────────────────
-    // Handles the OAuth callback. Returns a Sanctum token.
+    // Handles the OAuth callback. Validates the server-side state token,
+    // then returns a Sanctum token.
 
     public function callback(Request $request, string $provider): JsonResponse
     {
         $this->validateProvider($provider);
+
+        // Validate server-side state to prevent CSRF
+        $state = $request->query('state');
+        if (! $state || ! Cache::has("oauth_state:{$state}")) {
+            return response()->json([
+                'type'   => 'https://platform.local/errors/oauth-invalid-state',
+                'title'  => 'Invalid OAuth State',
+                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
+                'detail' => 'The OAuth state parameter is missing or has expired.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        // Consume state token (one-time use)
+        Cache::forget("oauth_state:{$state}");
 
         try {
             $socialUser = Socialite::driver($provider)->stateless()->user();
@@ -78,7 +104,7 @@ class SocialAuthController extends Controller
                 ['email' => strtolower($socialUser->getEmail())],
                 [
                     'name'              => $socialUser->getName() ?? $socialUser->getNickname() ?? 'User',
-                    'email_verified_at' => now(),
+                    'email_verified_at' => now(), // OAuth-verified email
                     'avatar'            => $socialUser->getAvatar(),
                 ]
             );

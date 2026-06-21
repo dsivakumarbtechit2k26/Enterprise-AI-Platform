@@ -10,6 +10,7 @@ use App\Services\AuditService;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
@@ -44,19 +45,28 @@ class PasswordController extends Controller
             'password' => ['required', 'confirmed', $this->passwordRule()],
         ]);
 
+        // Check password reuse BEFORE invoking Password::reset so we can return
+        // a proper structured error rather than letting an exception bubble up.
+        $user = User::where('email', strtolower($validated['email']))->first();
+        if ($user && $user->isPasswordInHistory($validated['password'])) {
+            return response()->json([
+                'type'   => 'https://platform.local/errors/password-reuse',
+                'title'  => 'Password Reuse Detected',
+                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
+                'detail' => 'You cannot reuse one of your last 5 passwords.',
+                'errors' => ['password' => ['You cannot reuse one of your last 5 passwords.']],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function (User $user, string $password) use ($request): void {
-                if ($user->isPasswordInHistory($password)) {
-                    throw new \RuntimeException('password_reuse');
-                }
-
                 $hash = Hash::make($password);
                 $user->forceFill(['password' => $hash, 'remember_token' => Str::random(60)]);
                 $user->save();
                 $user->addPasswordToHistory($hash);
 
-                // Revoke all tokens on password reset
+                // Revoke all tokens on password reset for security
                 $user->tokens()->delete();
                 event(new PasswordReset($user));
 

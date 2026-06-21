@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Auth\MustVerifyEmail;
+use Illuminate\Contracts\Auth\MustVerifyEmail as MustVerifyEmailContract;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -11,9 +13,9 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\HasApiTokens;
 
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmailContract
 {
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, MustVerifyEmail, Notifiable;
 
     protected $connection = 'central';
 
@@ -42,12 +44,12 @@ class User extends Authenticatable
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
-            'last_login_at'     => 'datetime',
-            'locked_until'      => 'datetime',
-            'mfa_enabled'       => 'boolean',
-            'mfa_backup_codes'  => 'encrypted:array',
-            'password'          => 'hashed',
+            'email_verified_at'  => 'datetime',
+            'last_login_at'      => 'datetime',
+            'locked_until'       => 'datetime',
+            'mfa_enabled'        => 'boolean',
+            'mfa_backup_codes'   => 'encrypted:array',
+            'password'           => 'hashed',
         ];
     }
 

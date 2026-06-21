@@ -25,6 +25,9 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\SecurityHeadersMiddleware::class,
         ]);
 
+        // Sanctum SPA cookie-based auth for registered stateful domains
+        $middleware->statefulApi();
+
         $middleware->alias([
             'account.not.locked' => \App\Http\Middleware\EnsureAccountNotLocked::class,
             'platform.admin'     => \App\Http\Middleware\EnsurePlatformAdminKey::class,

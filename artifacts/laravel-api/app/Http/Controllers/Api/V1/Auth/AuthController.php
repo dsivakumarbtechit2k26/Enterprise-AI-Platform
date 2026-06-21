@@ -38,6 +38,9 @@ class AuthController extends Controller
         // Save initial password to history
         $user->addPasswordToHistory($user->password);
 
+        // Send email verification notification
+        $user->sendEmailVerificationNotification();
+
         $this->audit->logAuth('user.registered', $user->id, $request);
 
         $token = $user->createToken('api')->plainTextToken;
@@ -47,7 +50,7 @@ class AuthController extends Controller
                 'user'  => $this->userResource($user),
                 'token' => $token,
             ],
-            'message' => 'Registration successful.',
+            'message' => 'Registration successful. Please verify your email address.',
         ], Response::HTTP_CREATED);
     }
 
@@ -145,6 +148,32 @@ class AuthController extends Controller
     public function me(Request $request): JsonResponse
     {
         return response()->json(['data' => $this->userResource($request->user())]);
+    }
+
+    // ── GET /api/v1/auth/email/verify/{id}/{hash} ─────────────────────────────
+
+    public function verifyEmail(Request $request, int $id, string $hash): JsonResponse
+    {
+        $user = User::findOrFail($id);
+
+        // Validate hash against the user's email
+        if (! hash_equals(sha1($user->getEmailForVerification()), $hash)) {
+            return response()->json([
+                'type'   => 'https://platform.local/errors/invalid-verification-link',
+                'title'  => 'Invalid Verification Link',
+                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
+                'detail' => 'The email verification link is invalid.',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        if ($user->hasVerifiedEmail()) {
+            return response()->json(['message' => 'Email already verified.']);
+        }
+
+        $user->markEmailAsVerified();
+        $this->audit->logAuth('auth.email.verified', $user->id, $request);
+
+        return response()->json(['message' => 'Email verified successfully.']);
     }
 
     // ── POST /api/v1/auth/email/verify-resend ────────────────────────────────
