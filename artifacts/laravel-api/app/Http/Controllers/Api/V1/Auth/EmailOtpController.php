@@ -27,7 +27,7 @@ class EmailOtpController extends Controller
     {
         $request->validate(['mfa_token' => ['required', 'string']]);
 
-        $pending = MfaPendingSession::where('token', $request->mfa_token)
+        $pending = MfaPendingSession::where('token', hash('sha256', $request->mfa_token))
             ->where('expires_at', '>', now())
             ->first();
 
@@ -56,7 +56,7 @@ class EmailOtpController extends Controller
             'otp'       => ['required', 'string', 'size:6'],
         ]);
 
-        $pending = MfaPendingSession::where('token', $request->mfa_token)
+        $pending = MfaPendingSession::where('token', hash('sha256', $request->mfa_token))
             ->where('expires_at', '>', now())
             ->first();
 

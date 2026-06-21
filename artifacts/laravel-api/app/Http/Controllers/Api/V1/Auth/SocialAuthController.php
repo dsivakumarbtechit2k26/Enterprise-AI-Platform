@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\MfaPendingSession;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Services\AuditService;
@@ -120,6 +121,27 @@ class SocialAuthController extends Controller
 
         $user->clearFailedLogins();
         $this->audit->logAuth('auth.oauth.login', $user->id, $request, ['provider' => $provider]);
+
+        // Enforce MFA challenge for MFA-enabled users — OAuth does not bypass 2FA
+        if ($user->mfa_enabled) {
+            $rawToken = Str::random(64);
+
+            MfaPendingSession::create([
+                'user_id'    => $user->id,
+                'token'      => hash('sha256', $rawToken),
+                'expires_at' => now()->addMinutes(10),
+            ]);
+
+            $this->audit->logAuth('auth.login.mfa_required', $user->id, $request, ['via' => 'oauth']);
+
+            return response()->json([
+                'data' => [
+                    'mfa_required' => true,
+                    'mfa_token'    => $rawToken,
+                ],
+                'message' => 'MFA verification required.',
+            ], Response::HTTP_OK);
+        }
 
         $token = $user->createToken('api')->plainTextToken;
 
