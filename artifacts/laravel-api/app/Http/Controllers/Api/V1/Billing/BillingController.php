@@ -117,17 +117,20 @@ class BillingController extends Controller
     }
 
     // ── GET /billing/invoices/{id}/download ───────────────────────────────────
+    // Uses the custom InvoiceService + dompdf Blade template for branded PDFs.
 
     public function downloadInvoice(Request $request, string $invoiceId): Response|JsonResponse
     {
         $tenant = $this->resolveTenant($request);
 
         try {
-            return $tenant->downloadInvoice($invoiceId, [
-                'vendor'  => config('app.name', 'Enterprise Platform'),
-                'product' => 'SaaS Subscription',
-            ]);
+            return $this->invoices->downloadPdf($tenant, $invoiceId);
         } catch (\Throwable $e) {
+            Log::warning('BillingController@downloadInvoice failed', [
+                'tenant_id'  => $tenant->id,
+                'invoice_id' => $invoiceId,
+                'error'      => $e->getMessage(),
+            ]);
             return response()->json(['message' => 'Invoice not found.'], 404);
         }
     }

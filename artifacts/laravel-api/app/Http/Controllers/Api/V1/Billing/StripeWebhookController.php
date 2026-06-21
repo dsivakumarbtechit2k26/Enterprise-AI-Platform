@@ -7,8 +7,7 @@ namespace App\Http\Controllers\Api\V1\Billing;
 use App\Jobs\SendDunningEmailJob;
 use App\Models\Tenant;
 use App\Services\BillingService;
-use Illuminate\Http\Request;
-use Illuminate\Routing\Controller;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Laravel\Cashier\Http\Controllers\WebhookController;
 use Symfony\Component\HttpFoundation\Response;
@@ -24,7 +23,7 @@ class StripeWebhookController extends WebhookController
 
     public function handleCheckoutSessionCompleted(array $payload): Response
     {
-        $session = $payload['data']['object'];
+        $session  = $payload['data']['object'];
         $tenantId = $session['metadata']['tenant_id'] ?? null;
 
         if (! $tenantId) {
@@ -36,9 +35,9 @@ class StripeWebhookController extends WebhookController
             return $this->successMethod();
         }
 
-        // Map Stripe price → plan key (best effort; definitive update via subscription.updated)
-        if ($priceId = $session['metadata']['plan_key'] ?? null) {
-            $tenant->update(['plan' => $priceId]);
+        // Best-effort plan key sync; definitive update arrives via subscription.updated
+        if ($planKey = $session['metadata']['plan_key'] ?? null) {
+            $tenant->update(['plan' => $planKey]);
             $this->billing->bustPlanCache($tenant->id);
         }
 
@@ -78,9 +77,9 @@ class StripeWebhookController extends WebhookController
 
         $attemptCount = $invoice['attempt_count'] ?? 1;
 
-        // Schedule dunning emails on day 1, 3, 7 based on attempt number
+        // Schedule dunning emails: day 1 immediately, day 3 on attempt 2, day 7 on attempt 3
         $delays = [1 => 0, 2 => now()->addDays(2), 3 => now()->addDays(6)];
-        $delay = $delays[$attemptCount] ?? null;
+        $delay  = $delays[$attemptCount] ?? null;
 
         if ($delay !== null) {
             $job = new SendDunningEmailJob($tenant->id, $attemptCount);
@@ -96,9 +95,16 @@ class StripeWebhookController extends WebhookController
     }
 
     // ── customer.subscription.updated ────────────────────────────────────────
+    //
+    // Delegates to Cashier parent FIRST so that the `subscriptions` table row
+    // (stripe_status, ends_at, items, trial_ends_at) is always kept in sync by
+    // Cashier's own logic. Our additional logic runs after.
 
     public function handleCustomerSubscriptionUpdated(array $payload): Response
     {
+        // Sync Cashier's own subscriptions table (stripe_status, ends_at, items, etc.)
+        parent::handleCustomerSubscriptionUpdated($payload);
+
         $sub      = $payload['data']['object'];
         $stripeId = $sub['customer'];
         $tenant   = Tenant::where('stripe_id', $stripeId)->first();
@@ -107,12 +113,33 @@ class StripeWebhookController extends WebhookController
             return $this->successMethod();
         }
 
-        // Resolve plan key from price metadata
-        $priceId  = $sub['items']['data'][0]['price']['id'] ?? null;
-        $planKey  = $sub['metadata']['plan_key'] ?? $this->planKeyFromPriceId($priceId);
+        // If the subscription is set to cancel at period end, preserve the current
+        // plan and record when it will expire — the tenant retains paid access until then.
+        if ($sub['cancel_at_period_end'] ?? false) {
+            $periodEnd = isset($sub['current_period_end'])
+                ? Carbon::createFromTimestamp($sub['current_period_end'])
+                : null;
+
+            $tenant->update(['subscription_ends_at' => $periodEnd]);
+            $this->billing->bustPlanCache($tenant->id);
+
+            Log::info('Stripe: subscription set to cancel at period end', [
+                'tenant_id' => $tenant->id,
+                'ends_at'   => $periodEnd?->toIso8601String(),
+            ]);
+
+            return $this->successMethod();
+        }
+
+        // Normal update / upgrade / reactivation — sync plan key
+        $priceId = $sub['items']['data'][0]['price']['id'] ?? null;
+        $planKey = $sub['metadata']['plan_key'] ?? $this->planKeyFromPriceId($priceId);
 
         if ($planKey) {
-            $tenant->update(['plan' => $planKey]);
+            $tenant->update([
+                'plan'                 => $planKey,
+                'subscription_ends_at' => null, // clear any pending cancellation
+            ]);
             $this->billing->bustPlanCache($tenant->id);
         }
 
@@ -125,9 +152,18 @@ class StripeWebhookController extends WebhookController
     }
 
     // ── customer.subscription.deleted ────────────────────────────────────────
+    //
+    // `customer.subscription.deleted` fires either when Stripe has reached
+    // `current_period_end` (for cancel_at_period_end subs) or immediately on
+    // immediate cancellations.  We only downgrade to free once the period has
+    // truly ended; if `current_period_end` is in the future the tenant keeps
+    // their plan until that date and we schedule a grace-period window.
 
     public function handleCustomerSubscriptionDeleted(array $payload): Response
     {
+        // Sync Cashier's subscriptions table — marks subscription as canceled
+        parent::handleCustomerSubscriptionDeleted($payload);
+
         $sub      = $payload['data']['object'];
         $stripeId = $sub['customer'];
         $tenant   = Tenant::where('stripe_id', $stripeId)->first();
@@ -136,15 +172,31 @@ class StripeWebhookController extends WebhookController
             return $this->successMethod();
         }
 
-        $tenant->update([
-            'plan'                 => 'free',
-            'subscription_ends_at' => now(),
-        ]);
-        $this->billing->bustPlanCache($tenant->id);
+        $periodEnd = isset($sub['current_period_end'])
+            ? Carbon::createFromTimestamp($sub['current_period_end'])
+            : null;
 
-        Log::info('Stripe: customer.subscription.deleted — downgraded to free', [
-            'tenant_id' => $tenant->id,
-        ]);
+        if ($periodEnd && $periodEnd->isFuture()) {
+            // Immediately-cancelled subscription with remaining paid time (grace period)
+            $tenant->update(['subscription_ends_at' => $periodEnd]);
+
+            Log::info('Stripe: subscription deleted with remaining grace period', [
+                'tenant_id'  => $tenant->id,
+                'grace_ends' => $periodEnd->toIso8601String(),
+            ]);
+        } else {
+            // Subscription period has fully ended — downgrade to free
+            $tenant->update([
+                'plan'                 => 'free',
+                'subscription_ends_at' => $periodEnd ?? now(),
+            ]);
+
+            Log::info('Stripe: customer.subscription.deleted — downgraded to free', [
+                'tenant_id' => $tenant->id,
+            ]);
+        }
+
+        $this->billing->bustPlanCache($tenant->id);
 
         return $this->successMethod();
     }
@@ -157,7 +209,6 @@ class StripeWebhookController extends WebhookController
             return null;
         }
 
-        return \App\Models\SubscriptionPlan::where('stripe_price_id', $priceId)
-            ->value('key');
+        return \App\Models\SubscriptionPlan::where('stripe_price_id', $priceId)->value('key');
     }
 }

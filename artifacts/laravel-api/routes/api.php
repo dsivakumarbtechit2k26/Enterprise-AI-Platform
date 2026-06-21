@@ -184,19 +184,26 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['auth:sanctum', 'account.not.locked', 'tenant.permissions'])
         ->prefix('billing')
         ->group(function () {
+            // Read access — any tenant member with billing.view
             Route::get('/subscription', [BillingController::class, 'subscription'])
+                ->middleware('permission:billing.view')
                 ->name('api.v1.billing.subscription');
 
+            Route::get('/invoices', [BillingController::class, 'invoiceList'])
+                ->middleware('permission:billing.view')
+                ->name('api.v1.billing.invoices.index');
+
+            // Write / action access — tenant admin/owner with billing.manage
             Route::post('/checkout', [BillingController::class, 'checkout'])
+                ->middleware('permission:billing.manage')
                 ->name('api.v1.billing.checkout');
 
             Route::post('/portal', [BillingController::class, 'portal'])
+                ->middleware('permission:billing.manage')
                 ->name('api.v1.billing.portal');
 
-            Route::get('/invoices', [BillingController::class, 'invoiceList'])
-                ->name('api.v1.billing.invoices.index');
-
             Route::get('/invoices/{invoiceId}/download', [BillingController::class, 'downloadInvoice'])
+                ->middleware('permission:billing.view')
                 ->name('api.v1.billing.invoices.download');
         });
 
