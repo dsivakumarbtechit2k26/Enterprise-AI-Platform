@@ -7,6 +7,7 @@ export type ErrorType<T = unknown> = ApiError<T>;
 export type BodyType<T> = T;
 
 export type AuthTokenGetter = () => Promise<string | null> | string | null;
+export type CustomHeadersGetter = () => Promise<Record<string, string>> | Record<string, string>;
 
 const NO_BODY_STATUS = new Set([204, 205, 304]);
 const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
@@ -17,6 +18,7 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
+let _customHeadersGetter: CustomHeadersGetter | null = null;
 
 /**
  * Set a base URL that is prepended to every relative request URL
@@ -42,6 +44,15 @@ export function setBaseUrl(url: string | null): void {
  */
 export function setAuthTokenGetter(getter: AuthTokenGetter | null): void {
   _authTokenGetter = getter;
+}
+
+/**
+ * Register a getter that supplies extra request headers (e.g. X-Tenant-ID).
+ * Called before every fetch; the returned headers are merged into the request.
+ * Pass `null` to clear the getter.
+ */
+export function setCustomHeadersGetter(getter: CustomHeadersGetter | null): void {
+  _customHeadersGetter = getter;
 }
 
 function isRequest(input: RequestInfo | URL): input is Request {
@@ -347,6 +358,16 @@ export async function customFetch<T = unknown>(
 
   if (responseType === "json" && !headers.has("accept")) {
     headers.set("accept", DEFAULT_JSON_ACCEPT);
+  }
+
+  // Attach extra headers (e.g. X-Tenant-ID) when a custom headers getter is set.
+  if (_customHeadersGetter) {
+    const extra = await _customHeadersGetter();
+    for (const [key, value] of Object.entries(extra)) {
+      if (!headers.has(key)) {
+        headers.set(key, value);
+      }
+    }
   }
 
   // Attach bearer token when an auth getter is configured and no

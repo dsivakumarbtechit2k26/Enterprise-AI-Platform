@@ -1,22 +1,33 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
-  version: 0.1.0
-  description: API specification
+  version: 1.0.0
+  description: Enterprise Platform API
 servers:
   - url: /api
-    description: Base API path
+    description: Laravel API base
 tags:
   - name: health
-    description: Health operations
+    description: Health & version
+  - name: auth
+    description: Authentication
+  - name: mfa
+    description: Multi-factor authentication
+  - name: billing
+    description: Subscription & billing
+  - name: rbac
+    description: Roles & permissions
+  - name: platform
+    description: Platform-level data
+  - name: tenants
+    description: Tenant management
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +35,1344 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /v1/health:
+    get:
+      operationId: apiHealth
+      tags: [health]
+      summary: API health
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /v1/platform/plans:
+    get:
+      operationId: listPlans
+      tags: [platform]
+      summary: List available subscription plans
+      responses:
+        "200":
+          description: Plans list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanListResponse"
+
+  # ── Auth: unauthenticated ──────────────────────────────────────────────────
+
+  /v1/auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterInput"
+      responses:
+        "201":
+          description: Registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /v1/auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login with email + password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Login result (token or MFA challenge)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResult"
+        "401":
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /v1/auth/password/forgot:
+    post:
+      operationId: forgotPassword
+      tags: [auth]
+      summary: Send password reset email
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordInput"
+      responses:
+        "200":
+          description: Reset email sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /v1/auth/password/reset:
+    post:
+      operationId: resetPassword
+      tags: [auth]
+      summary: Reset password with token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordInput"
+      responses:
+        "200":
+          description: Password reset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /v1/auth/mfa/verify:
+    post:
+      operationId: verifyMfa
+      tags: [mfa]
+      summary: Complete MFA challenge (TOTP or backup code)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaVerifyInput"
+      responses:
+        "200":
+          description: MFA verified, returns full auth token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "422":
+          description: Invalid code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /v1/auth/email-otp/send:
+    post:
+      operationId: sendEmailOtp
+      tags: [mfa]
+      summary: Send email OTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailOtpSendInput"
+      responses:
+        "200":
+          description: OTP sent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/auth/email-otp/verify:
+    post:
+      operationId: verifyEmailOtp
+      tags: [mfa]
+      summary: Verify email OTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EmailOtpVerifyInput"
+      responses:
+        "200":
+          description: OTP verified, returns full auth token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "422":
+          description: Invalid code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  # ── Auth: authenticated ────────────────────────────────────────────────────
+
+  /v1/auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Revoke current token
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/auth/logout-all:
+    post:
+      operationId: logoutAll
+      tags: [auth]
+      summary: Revoke all tokens
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: All sessions invalidated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Current user + tenant context
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current user data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MeResponse"
+        "401":
+          description: Unauthenticated
+
+  /v1/auth/password/change:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      summary: Change password
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordInput"
+      responses:
+        "200":
+          description: Password changed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /v1/auth/mfa/setup:
+    get:
+      operationId: getMfaSetup
+      tags: [mfa]
+      summary: Get TOTP setup data (QR code + secret)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: MFA setup data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaSetupResponse"
+
+  /v1/auth/mfa/setup/confirm:
+    post:
+      operationId: confirmMfaSetup
+      tags: [mfa]
+      summary: Confirm TOTP setup with first code
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaConfirmInput"
+      responses:
+        "200":
+          description: MFA enabled, returns backup codes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaConfirmResponse"
+        "422":
+          description: Invalid code
+
+  /v1/auth/mfa:
+    delete:
+      operationId: disableMfa
+      tags: [mfa]
+      summary: Disable MFA
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: MFA disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/auth/mfa/backup-codes/regenerate:
+    post:
+      operationId: regenerateBackupCodes
+      tags: [mfa]
+      summary: Regenerate MFA backup codes
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: New backup codes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BackupCodesResponse"
+
+  # ── RBAC ─────────────────────────────────────────────────────────────────
+
+  /v1/my-permissions:
+    get:
+      operationId: getMyPermissions
+      tags: [rbac]
+      summary: Current user permissions in active tenant
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: User permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MyPermissionsResponse"
+
+  /v1/permissions:
+    get:
+      operationId: listPermissions
+      tags: [rbac]
+      summary: List all system permissions
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Permission list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PermissionListResponse"
+
+  /v1/permissions/grant:
+    post:
+      operationId: grantPermission
+      tags: [rbac]
+      summary: Grant a permission directly to a user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionGrantInput"
+      responses:
+        "200":
+          description: Permission granted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/permissions/revoke:
+    post:
+      operationId: revokePermission
+      tags: [rbac]
+      summary: Revoke a permission from a user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PermissionRevokeInput"
+      responses:
+        "200":
+          description: Permission revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/roles:
+    get:
+      operationId: listRoles
+      tags: [rbac]
+      summary: List all roles in the active tenant
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Role list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RoleListResponse"
+    post:
+      operationId: createRole
+      tags: [rbac]
+      summary: Create a custom role
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleInput"
+      responses:
+        "201":
+          description: Role created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /v1/roles/{roleId}:
+    get:
+      operationId: getRole
+      tags: [rbac]
+      summary: Get a role with its permissions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Role detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateRole
+      tags: [rbac]
+      summary: Update a role
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleUpdate"
+      responses:
+        "200":
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Role"
+    delete:
+      operationId: deleteRole
+      tags: [rbac]
+      summary: Delete a custom role
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/roles/{roleId}/assign:
+    post:
+      operationId: assignRole
+      tags: [rbac]
+      summary: Assign a role to a user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleAssignInput"
+      responses:
+        "200":
+          description: Role assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/roles/{roleId}/remove:
+    post:
+      operationId: removeRole
+      tags: [rbac]
+      summary: Remove a role from a user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RoleAssignInput"
+      responses:
+        "200":
+          description: Role removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/roles/{roleId}/field-permissions:
+    get:
+      operationId: listFieldPermissions
+      tags: [rbac]
+      summary: List field-level permissions for a role
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Field permissions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FieldPermissionListResponse"
+    put:
+      operationId: upsertFieldPermissions
+      tags: [rbac]
+      summary: Upsert field-level permissions for a role
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FieldPermissionUpsertInput"
+      responses:
+        "200":
+          description: Field permissions updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/roles/{roleId}/field-permissions/{fieldPermId}:
+    delete:
+      operationId: deleteFieldPermission
+      tags: [rbac]
+      summary: Delete a single field permission
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: roleId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: fieldPermId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # ── Billing ───────────────────────────────────────────────────────────────
+
+  /v1/billing/subscription:
+    get:
+      operationId: getSubscription
+      tags: [billing]
+      summary: Get active subscription for the tenant
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Subscription data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionResponse"
+
+  /v1/billing/invoices:
+    get:
+      operationId: listInvoices
+      tags: [billing]
+      summary: List tenant invoices
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Invoice list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceListResponse"
+
+  /v1/billing/checkout:
+    post:
+      operationId: createCheckout
+      tags: [billing]
+      summary: Create a Stripe checkout session
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CheckoutInput"
+      responses:
+        "200":
+          description: Stripe checkout URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CheckoutResponse"
+        "422":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidationError"
+
+  /v1/billing/portal:
+    post:
+      operationId: createPortalSession
+      tags: [billing]
+      summary: Create a Stripe billing portal session
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Portal URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PortalResponse"
+
+  /v1/billing/invoices/{invoiceId}/download:
+    get:
+      operationId: downloadInvoice
+      tags: [billing]
+      summary: Get a signed download URL for an invoice PDF
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: invoiceId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Signed download URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InvoiceDownloadResponse"
+        "404":
+          description: Not found
+
+  # ── Tenants (platform admin) ──────────────────────────────────────────────
+
+  /v1/tenants/{tenantId}:
+    get:
+      operationId: getTenant
+      tags: [tenants]
+      summary: Get tenant by ID (platform admin only)
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Tenant details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "404":
+          description: Not found
+
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
   schemas:
+    # ── Utility ───────────────────────────────────────────────────────────────
+
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        error:
+          type: ["string", "null"]
+
+    ValidationError:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+    # ── User & Auth ───────────────────────────────────────────────────────────
+
+    User:
+      type: object
+      required: [id, name, email, email_verified_at, mfa_enabled, created_at]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        email_verified_at:
+          type: ["string", "null"]
+          format: date-time
+        mfa_enabled:
+          type: boolean
+        avatar:
+          type: ["string", "null"]
+        created_at:
+          type: string
+          format: date-time
+
+    Tenant:
+      type: object
+      required: [id, name, slug, plan_key, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        slug:
+          type: string
+        plan_key:
+          type: string
+        status:
+          type: string
+          enum: [active, suspended, trialing]
+        created_at:
+          type: string
+          format: date-time
+
+    AuthResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token:
+          type: string
+        user:
+          $ref: "#/components/schemas/User"
+        tenant:
+          $ref: "#/components/schemas/Tenant"
+
+    LoginResult:
+      type: object
+      required: [requires_mfa]
+      properties:
+        requires_mfa:
+          type: boolean
+        mfa_token:
+          type: ["string", "null"]
+        mfa_method:
+          type: ["string", "null"]
+          enum: [totp, email_otp, null]
+        token:
+          type: ["string", "null"]
+        user:
+          $ref: "#/components/schemas/User"
+        tenant:
+          $ref: "#/components/schemas/Tenant"
+
+    MeResponse:
+      type: object
+      required: [user, permissions]
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        tenant:
+          $ref: "#/components/schemas/Tenant"
+        permissions:
+          type: array
+          items:
+            type: string
+        roles:
+          type: array
+          items:
+            type: string
+
+    # ── Auth inputs ───────────────────────────────────────────────────────────
+
+    RegisterInput:
+      type: object
+      required: [name, email, password, password_confirmation]
+      properties:
+        name:
+          type: string
+          minLength: 2
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        password_confirmation:
+          type: string
+        tenant_name:
+          type: string
+
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+        remember:
+          type: boolean
+
+    ForgotPasswordInput:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+
+    ResetPasswordInput:
+      type: object
+      required: [token, email, password, password_confirmation]
+      properties:
+        token:
+          type: string
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 8
+        password_confirmation:
+          type: string
+
+    ChangePasswordInput:
+      type: object
+      required: [current_password, password, password_confirmation]
+      properties:
+        current_password:
+          type: string
+        password:
+          type: string
+          minLength: 8
+        password_confirmation:
+          type: string
+
+    # ── MFA ──────────────────────────────────────────────────────────────────
+
+    MfaVerifyInput:
+      type: object
+      required: [mfa_token, code]
+      properties:
+        mfa_token:
+          type: string
+        code:
+          type: string
+
+    EmailOtpSendInput:
+      type: object
+      required: [mfa_token]
+      properties:
+        mfa_token:
+          type: string
+
+    EmailOtpVerifyInput:
+      type: object
+      required: [mfa_token, code]
+      properties:
+        mfa_token:
+          type: string
+        code:
+          type: string
+
+    MfaSetupResponse:
+      type: object
+      required: [qr_code_url, secret]
+      properties:
+        qr_code_url:
+          type: string
+        secret:
+          type: string
+
+    MfaConfirmInput:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+
+    MfaConfirmResponse:
+      type: object
+      required: [backup_codes]
+      properties:
+        backup_codes:
+          type: array
+          items:
+            type: string
+        message:
+          type: string
+
+    BackupCodesResponse:
+      type: object
+      required: [backup_codes]
+      properties:
+        backup_codes:
+          type: array
+          items:
+            type: string
+
+    # ── RBAC ──────────────────────────────────────────────────────────────────
+
+    Permission:
+      type: object
+      required: [id, name, display_name, group]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        display_name:
+          type: string
+        group:
+          type: string
+        description:
+          type: ["string", "null"]
+
+    Role:
+      type: object
+      required: [id, name, display_name, is_system]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: ["string", "null"]
+        is_system:
+          type: boolean
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+        users_count:
+          type: ["integer", "null"]
+
+    FieldPermission:
+      type: object
+      required: [id, resource, field, access]
+      properties:
+        id:
+          type: integer
+        resource:
+          type: string
+        field:
+          type: string
+        access:
+          type: string
+          enum: [read, write, hidden]
+
+    MyPermissionsResponse:
+      type: object
+      required: [permissions, roles]
+      properties:
+        permissions:
+          type: array
+          items:
+            type: string
+        roles:
+          type: array
+          items:
+            type: string
+
+    PermissionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+
+    RoleListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Role"
+
+    FieldPermissionListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldPermission"
+
+    RoleInput:
+      type: object
+      required: [name, display_name]
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        permission_ids:
+          type: array
+          items:
+            type: integer
+
+    RoleUpdate:
+      type: object
+      properties:
+        display_name:
+          type: string
+        description:
+          type: string
+        permission_ids:
+          type: array
+          items:
+            type: integer
+
+    RoleAssignInput:
+      type: object
+      required: [user_id]
+      properties:
+        user_id:
+          type: integer
+
+    PermissionGrantInput:
+      type: object
+      required: [user_id, permission]
+      properties:
+        user_id:
+          type: integer
+        permission:
+          type: string
+
+    PermissionRevokeInput:
+      type: object
+      required: [user_id, permission]
+      properties:
+        user_id:
+          type: integer
+        permission:
+          type: string
+
+    FieldPermissionUpsertInput:
+      type: object
+      required: [permissions]
+      properties:
+        permissions:
+          type: array
+          items:
+            type: object
+            required: [resource, field, access]
+            properties:
+              resource:
+                type: string
+              field:
+                type: string
+              access:
+                type: string
+                enum: [read, write, hidden]
+
+    # ── Billing ──────────────────────────────────────────────────────────────
+
+    SubscriptionPlan:
+      type: object
+      required: [key, name, price_monthly, features]
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        price_monthly:
+          type: number
+        stripe_price_id:
+          type: ["string", "null"]
+        features:
+          type: array
+          items:
+            type: string
+        is_active:
+          type: boolean
+
+    Subscription:
+      type: object
+      required: [plan_key, status]
+      properties:
+        plan_key:
+          type: string
+        plan_name:
+          type: string
+        status:
+          type: string
+          enum: [active, trialing, past_due, canceled, incomplete]
+        current_period_start:
+          type: ["string", "null"]
+          format: date-time
+        current_period_end:
+          type: ["string", "null"]
+          format: date-time
+        cancel_at_period_end:
+          type: boolean
+        stripe_subscription_id:
+          type: ["string", "null"]
+        quota:
+          type: object
+          properties:
+            api_calls_used:
+              type: integer
+            api_calls_limit:
+              type: ["integer", "null"]
+            users_count:
+              type: integer
+            users_limit:
+              type: ["integer", "null"]
+            storage_used_mb:
+              type: number
+            storage_limit_mb:
+              type: ["number", "null"]
+
+    Invoice:
+      type: object
+      required: [id, number, amount_due, status, date]
+      properties:
+        id:
+          type: string
+        number:
+          type: string
+        amount_due:
+          type: number
+        amount_paid:
+          type: number
+        currency:
+          type: string
+        status:
+          type: string
+          enum: [paid, open, void, uncollectible]
+        date:
+          type: string
+          format: date-time
+        pdf_url:
+          type: ["string", "null"]
+
+    SubscriptionResponse:
+      type: object
+      required: [subscription]
+      properties:
+        subscription:
+          $ref: "#/components/schemas/Subscription"
+
+    PlanListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/SubscriptionPlan"
+
+    InvoiceListResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Invoice"
+
+    CheckoutInput:
+      type: object
+      required: [price_id]
+      properties:
+        price_id:
+          type: string
+
+    CheckoutResponse:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+
+    PortalResponse:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+
+    InvoiceDownloadResponse:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+        expires_at:
+          type: ["string", "null"]
+          format: date-time
