@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminFetch, type AdminSetting } from "@/lib/adminApi";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Save, AlertTriangle } from "lucide-react";
+import { Save, AlertTriangle, Mail, CheckCircle, XCircle, Loader2 } from "lucide-react";
 
 type SettingsData = Record<string, Record<string, AdminSetting>>;
 
@@ -75,6 +75,69 @@ function SettingInput({
   );
 }
 
+// ── SMTP Test Panel ───────────────────────────────────────────────────────────
+
+function SmtpTestPanel() {
+  const { toast } = useToast();
+  const [email, setEmail] = useState("");
+  const [lastResult, setLastResult] = useState<"success" | "error" | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: (to: string) =>
+      adminFetch<{ data: { sent_to: string }; message: string }>("/settings/smtp-test", {
+        method: "POST",
+        body: JSON.stringify({ to }),
+      }),
+    onSuccess: (res) => {
+      setLastResult("success");
+      toast({ title: "Test email sent", description: res.message });
+    },
+    onError: (e: Error) => {
+      setLastResult("error");
+      toast({ title: "SMTP test failed", description: e.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <div className="px-5 py-4 border-t border-white/10 bg-white/3">
+      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+        Test SMTP Configuration
+      </p>
+      <div className="flex items-center gap-3">
+        <Input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Send test to email@example.com"
+          className="bg-slate-800 border-white/10 text-white text-sm h-8 max-w-xs placeholder:text-slate-500"
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-white/10 text-slate-300 hover:bg-white/10 shrink-0"
+          disabled={!email || mutation.isPending}
+          onClick={() => mutation.mutate(email)}
+        >
+          {mutation.isPending ? (
+            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+          ) : (
+            <Mail className="w-3.5 h-3.5 mr-1.5" />
+          )}
+          Send Test Email
+        </Button>
+        {lastResult === "success" && !mutation.isPending && (
+          <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+        )}
+        {lastResult === "error" && !mutation.isPending && (
+          <XCircle className="w-4 h-4 text-red-400 shrink-0" />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function AdminSettingsPage() {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -134,10 +197,8 @@ export default function AdminSettingsPage() {
 
   const hasChanges = Object.keys(edits).length > 0;
 
-  const allGroups = Object.keys(GROUP_LABELS);
-  const presentGroups = data
-    ? allGroups.filter((g) => g in data)
-    : [];
+  const allGroups    = Object.keys(GROUP_LABELS);
+  const presentGroups = data ? allGroups.filter((g) => g in data) : [];
 
   return (
     <div className="space-y-6">
@@ -154,19 +215,25 @@ export default function AdminSettingsPage() {
           className="bg-primary hover:bg-primary/90"
         >
           <Save className="w-3.5 h-3.5 mr-1.5" />
-          {hasChanges ? `Save ${Object.keys(edits).length} change${Object.keys(edits).length !== 1 ? "s" : ""}` : "No changes"}
+          {hasChanges
+            ? `Save ${Object.keys(edits).length} change${Object.keys(edits).length !== 1 ? "s" : ""}`
+            : "No changes"}
         </Button>
       </div>
 
       {/* Maintenance mode big toggle */}
-      <div className={`rounded-xl border p-5 flex items-center justify-between gap-4 ${
-        isMaintenanceMode
-          ? "bg-red-950/40 border-red-400/30"
-          : "bg-slate-900 border-white/10"
-      }`}>
+      <div
+        className={`rounded-xl border p-5 flex items-center justify-between gap-4 ${
+          isMaintenanceMode
+            ? "bg-red-950/40 border-red-400/30"
+            : "bg-slate-900 border-white/10"
+        }`}
+      >
         <div>
           <div className="flex items-center gap-2">
-            <AlertTriangle className={`w-5 h-5 ${isMaintenanceMode ? "text-red-400" : "text-slate-400"}`} />
+            <AlertTriangle
+              className={`w-5 h-5 ${isMaintenanceMode ? "text-red-400" : "text-slate-400"}`}
+            />
             <h3 className={`font-semibold ${isMaintenanceMode ? "text-red-300" : "text-white"}`}>
               Maintenance Mode
             </h3>
@@ -205,7 +272,10 @@ export default function AdminSettingsPage() {
         presentGroups.map((group) => {
           const settings = data![group];
           return (
-            <div key={group} className="bg-slate-900 border border-white/10 rounded-xl overflow-hidden">
+            <div
+              key={group}
+              className="bg-slate-900 border border-white/10 rounded-xl overflow-hidden"
+            >
               <div className="px-5 py-3 border-b border-white/10 bg-white/5">
                 <h2 className="text-sm font-semibold text-white">
                   {GROUP_LABELS[group] ?? group}
@@ -215,11 +285,16 @@ export default function AdminSettingsPage() {
                 {Object.entries(settings)
                   .filter(([key]) => key !== maintenanceKey)
                   .map(([key, setting]) => (
-                    <div key={key} className="flex items-center justify-between gap-4 px-5 py-3.5">
+                    <div
+                      key={key}
+                      className="flex items-center justify-between gap-4 px-5 py-3.5"
+                    >
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-white font-medium">{key}</p>
                         {setting.description && (
-                          <p className="text-xs text-slate-500 mt-0.5">{setting.description}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {setting.description}
+                          </p>
                         )}
                       </div>
                       <div className="shrink-0">
@@ -232,6 +307,9 @@ export default function AdminSettingsPage() {
                     </div>
                   ))}
               </div>
+
+              {/* SMTP test panel — shown only in the "mail" group */}
+              {group === "mail" && <SmtpTestPanel />}
             </div>
           );
         })
@@ -243,11 +321,14 @@ export default function AdminSettingsPage() {
           <DialogHeader>
             <DialogTitle className="text-red-300">Enable Maintenance Mode</DialogTitle>
             <DialogDescription className="text-slate-400">
-              This will immediately block all user logins across the platform. Only admin users will be able to access the system. You must save settings to apply this change.
+              This will immediately block all user logins across the platform. Only admin users
+              will be able to access the system. You must save settings to apply this change.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setMaintenanceDialogOpen(false)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setMaintenanceDialogOpen(false)}>
+              Cancel
+            </Button>
             <Button
               variant="destructive"
               onClick={() => {

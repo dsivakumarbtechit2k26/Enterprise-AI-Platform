@@ -294,6 +294,9 @@ Route::prefix('v1')->group(function () {
 
             Route::patch('/settings', [AdminSettingsController::class, 'update'])
                 ->name('api.v1.admin.settings.update');
+
+            Route::post('/settings/smtp-test', [AdminSettingsController::class, 'smtpTest'])
+                ->name('api.v1.admin.settings.smtp_test');
         });
 
     // One-time impersonation token exchange — no admin auth required.

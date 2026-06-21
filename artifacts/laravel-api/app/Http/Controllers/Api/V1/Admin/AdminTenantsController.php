@@ -187,7 +187,12 @@ class AdminTenantsController extends Controller
                 'subscription_ends_at' => $tenant->subscription_ends_at,
                 'settings'             => $tenant->settings,
                 'user_count'           => $userCount,
-                'storage_bytes'        => 0,
+                'storage_bytes'        => (int) (DB::connection('central')->selectOne("
+                    SELECT COALESCE(SUM(pg_total_relation_size(c.oid)), 0)::bigint AS storage_bytes
+                    FROM pg_class c
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname = ?
+                ", [$tenant->id])?->storage_bytes ?? 0),
                 'users'                => $users,
                 'subscription'         => $subscriptionData,
                 'quota_usage'          => $quotaUsage,

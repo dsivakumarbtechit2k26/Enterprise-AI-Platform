@@ -32,6 +32,19 @@ class AdminAuditLogController extends Controller
             $query->where('event', 'LIKE', "%{$event}%");
         }
 
+        // event_prefixes: comma-separated prefix list, e.g. "auth.*,tenant.*"
+        // Each prefix is matched as LIKE 'prefix%' with OR logic.
+        if ($rawPrefixes = $request->input('event_prefixes')) {
+            $prefixes = array_filter(array_map('trim', explode(',', (string) $rawPrefixes)));
+            if (! empty($prefixes)) {
+                $query->where(function ($q) use ($prefixes): void {
+                    foreach ($prefixes as $prefix) {
+                        $q->orWhere('event', 'LIKE', rtrim($prefix, '.*') . '%');
+                    }
+                });
+            }
+        }
+
         if ($from = $request->input('from')) {
             $query->where('created_at', '>=', $from);
         }
