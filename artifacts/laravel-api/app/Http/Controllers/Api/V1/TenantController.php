@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Tenant;
+use Database\Seeders\TenantRbacSeeder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -34,6 +35,13 @@ class TenantController extends Controller
                 'created_via' => 'api',
             ],
         ]);
+
+        // Seed tenant-scoped RBAC roles (tenant-admin, manager, member, viewer)
+        try {
+            (new TenantRbacSeeder())->run($tenant->id);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning("TenantRbacSeeder failed for tenant [{$tenant->id}]: {$e->getMessage()}");
+        }
 
         return response()->json([
             'data' => [

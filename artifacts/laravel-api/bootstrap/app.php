@@ -32,6 +32,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'account.not.locked' => \App\Http\Middleware\EnsureAccountNotLocked::class,
             'platform.admin'     => \App\Http\Middleware\EnsurePlatformAdminKey::class,
             'auth'               => \App\Http\Middleware\Authenticate::class,
+            'permission'         => \App\Http\Middleware\CheckPermission::class,
+            'role'               => \App\Http\Middleware\CheckRole::class,
+            'tenant.permissions' => \App\Http\Middleware\ResolveTenantPermissions::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

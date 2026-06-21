@@ -12,12 +12,16 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Facades\Hash;
 use Laravel\Sanctum\HasApiTokens;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements MustVerifyEmailContract
 {
-    use HasApiTokens, HasFactory, MustVerifyEmail, Notifiable;
+    use HasApiTokens, HasFactory, HasRoles, MustVerifyEmail, Notifiable;
 
     protected $connection = 'central';
+
+    // Guard name used by spatie/laravel-permission
+    protected string $guard_name = 'sanctum';
 
     protected $fillable = [
         'name',

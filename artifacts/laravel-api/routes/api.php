@@ -9,6 +9,9 @@ use App\Http\Controllers\Api\V1\Auth\PasswordController;
 use App\Http\Controllers\Api\V1\Auth\SocialAuthController;
 use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\PlatformController;
+use App\Http\Controllers\Api\V1\Rbac\FieldPermissionController;
+use App\Http\Controllers\Api\V1\Rbac\PermissionController;
+use App\Http\Controllers\Api\V1\Rbac\RoleController;
 use App\Http\Controllers\Api\V1\TenantController;
 use App\Http\Middleware\EnsurePlatformAdminKey;
 use Illuminate\Support\Facades\Route;
@@ -101,6 +104,74 @@ Route::prefix('v1')->group(function () {
 
             Route::post('/backup-codes/regenerate', [MfaController::class, 'regenerateBackupCodes'])
                 ->name('api.v1.auth.mfa.backup_codes.regenerate');
+        });
+
+        // ── RBAC — tenant-scoped ───────────────────────────────────────────────
+        // Requires X-Tenant-ID header; resolves and scopes all permission checks.
+        Route::middleware(['tenant.permissions'])->prefix('rbac')->group(function () {
+
+            // Current user's permissions in active tenant
+            Route::get('/my-permissions', [PermissionController::class, 'userPermissions'])
+                ->name('api.v1.rbac.my_permissions');
+
+            // Permissions (read + grant/revoke)
+            Route::get('/permissions', [PermissionController::class, 'index'])
+                ->middleware('permission:permissions.view')
+                ->name('api.v1.rbac.permissions.index');
+
+            Route::get('/permissions/{id}', [PermissionController::class, 'show'])
+                ->middleware('permission:permissions.view')
+                ->name('api.v1.rbac.permissions.show');
+
+            Route::post('/permissions/grant', [PermissionController::class, 'grantToUser'])
+                ->middleware('permission:permissions.assign')
+                ->name('api.v1.rbac.permissions.grant');
+
+            Route::post('/permissions/revoke', [PermissionController::class, 'revokeFromUser'])
+                ->middleware('permission:permissions.assign')
+                ->name('api.v1.rbac.permissions.revoke');
+
+            // Roles CRUD + assignment
+            Route::get('/roles', [RoleController::class, 'index'])
+                ->middleware('permission:roles.view')
+                ->name('api.v1.rbac.roles.index');
+
+            Route::post('/roles', [RoleController::class, 'store'])
+                ->middleware('permission:roles.create')
+                ->name('api.v1.rbac.roles.store');
+
+            Route::get('/roles/{id}', [RoleController::class, 'show'])
+                ->middleware('permission:roles.view')
+                ->name('api.v1.rbac.roles.show');
+
+            Route::patch('/roles/{id}', [RoleController::class, 'update'])
+                ->middleware('permission:roles.update')
+                ->name('api.v1.rbac.roles.update');
+
+            Route::delete('/roles/{id}', [RoleController::class, 'destroy'])
+                ->middleware('permission:roles.delete')
+                ->name('api.v1.rbac.roles.destroy');
+
+            Route::post('/roles/{id}/assign', [RoleController::class, 'assignToUser'])
+                ->middleware('permission:roles.assign')
+                ->name('api.v1.rbac.roles.assign');
+
+            Route::post('/roles/{id}/remove', [RoleController::class, 'removeFromUser'])
+                ->middleware('permission:roles.assign')
+                ->name('api.v1.rbac.roles.remove');
+
+            // Field permissions
+            Route::get('/roles/{roleId}/field-permissions', [FieldPermissionController::class, 'index'])
+                ->middleware('permission:field_permissions.manage')
+                ->name('api.v1.rbac.field_permissions.index');
+
+            Route::put('/roles/{roleId}/field-permissions', [FieldPermissionController::class, 'upsert'])
+                ->middleware('permission:field_permissions.manage')
+                ->name('api.v1.rbac.field_permissions.upsert');
+
+            Route::delete('/roles/{roleId}/field-permissions/{fpId}', [FieldPermissionController::class, 'destroy'])
+                ->middleware('permission:field_permissions.manage')
+                ->name('api.v1.rbac.field_permissions.destroy');
         });
     });
 
