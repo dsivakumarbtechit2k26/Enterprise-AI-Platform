@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\Rbac\FieldPermissionController;
 use App\Http\Controllers\Api\V1\Rbac\PermissionController;
 use App\Http\Controllers\Api\V1\Rbac\RoleController;
 use App\Http\Controllers\Api\V1\TenantController;
+use App\Http\Controllers\Api\V1\Tenant\TenantSettingsController;
 use App\Http\Middleware\EnsurePlatformAdminKey;
 use Illuminate\Support\Facades\Route;
 
@@ -92,6 +93,10 @@ Route::prefix('v1')->group(function () {
         Route::post('/auth/email/verify-resend', [AuthController::class, 'resendVerification'])
             ->middleware('throttle:3,1')
             ->name('api.v1.auth.email.verify_resend');
+
+        // Tenant profile / onboarding settings
+        Route::patch('/tenant/profile', [TenantSettingsController::class, 'update'])
+            ->name('api.v1.tenant.profile.update');
 
         // Password change
         Route::post('/auth/password/change', [PasswordController::class, 'change'])

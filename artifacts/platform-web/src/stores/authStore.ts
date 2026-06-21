@@ -10,6 +10,8 @@ export interface AuthState {
   permissions: string[];
   roles: string[];
 
+  /** Store only a token (e.g. after OAuth redirect). user/tenant hydrated later via /me. */
+  setToken: (token: string) => void;
   setAuth: (params: { token: string; user: User; tenant?: Tenant | null }) => void;
   setMe: (params: { user: User; tenant?: Tenant | null; permissions: string[]; roles: string[] }) => void;
   setActiveTenant: (tenant: Tenant) => void;
@@ -28,6 +30,9 @@ export const useAuthStore = create<AuthState>()(
       activeTenantId: null,
       permissions: [],
       roles: [],
+
+      setToken: (token) =>
+        set({ token, user: null, tenant: null, activeTenantId: null, permissions: [], roles: [] }),
 
       setAuth: ({ token, user, tenant }) =>
         set({

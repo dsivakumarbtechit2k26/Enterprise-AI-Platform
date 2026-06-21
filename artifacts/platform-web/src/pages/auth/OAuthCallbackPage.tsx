@@ -11,12 +11,12 @@ import { Loader2 } from "lucide-react";
  *   - ?token=<jwt>&tenant_id=<id>  → successful auth
  *   - ?error=<message>             → auth failure
  *
- * We parse the params, populate the auth store, and redirect to the app.
+ * We store the token only; AppShell's useGetMe call hydrates user/tenant/permissions.
  */
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const setAuth = useAuthStore((s) => s.setAuth);
+  const setToken = useAuthStore((s) => s.setToken);
   const { toast } = useToast();
   const handled = useRef(false);
 
@@ -47,17 +47,10 @@ export default function OAuthCallbackPage() {
       return;
     }
 
-    // Store token; user/tenant profile will be loaded by AppShell's useGetMe call.
-    // We pass minimal stubs here — setMe() will overwrite them once /me responds.
-    setAuth({
-      token,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      user: null as any,
-      tenant: null,
-    });
-
+    // Store token only — user/tenant/permissions are fetched by AppShell via /me.
+    setToken(token);
     navigate("/", { replace: true });
-  }, [searchParams, navigate, setAuth, toast]);
+  }, [searchParams, navigate, setToken, toast]);
 
   return (
     <div

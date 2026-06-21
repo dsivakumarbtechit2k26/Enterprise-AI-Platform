@@ -11,17 +11,31 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, Building2, Users, Rocket, ChevronRight, ChevronLeft, Loader2 } from "lucide-react";
+import {
+  Check, Building2, Users, Rocket, ChevronRight, ChevronLeft,
+  Loader2, MailCheck, RefreshCw,
+} from "lucide-react";
 
-const TOTAL_STEPS = 4;
+// ── Steps ─────────────────────────────────────────────────────────────────────
+// 1: Welcome
+// 2: Email verification (gated on user.email_verified_at === null)
+// 3: Org details (persisted to API on submit)
+// 4: Plan selection (paid plans redirect to Stripe checkout)
+// 5: Done
+
+const TOTAL_STEPS = 5;
+
+// ── Schemas ───────────────────────────────────────────────────────────────────
 
 const orgSchema = z.object({
-  org_name: z.string().min(2, "Organization name must be at least 2 characters"),
-  industry: z.string().min(1, "Please select an industry"),
+  org_name:  z.string().min(2, "Organization name must be at least 2 characters"),
+  industry:  z.string().min(1, "Please select an industry"),
   team_size: z.string().min(1, "Please select a team size"),
 });
 
 type OrgFormValues = z.infer<typeof orgSchema>;
+
+// ── Constants ─────────────────────────────────────────────────────────────────
 
 const INDUSTRIES = [
   "Technology",
@@ -44,6 +58,8 @@ const TEAM_SIZES = [
   { value: "500+",    label: "500+ people" },
 ];
 
+// ── StepIndicator ─────────────────────────────────────────────────────────────
+
 function StepIndicator({ current, total }: { current: number; total: number }) {
   return (
     <div className="flex items-center justify-center gap-3 mb-8" data-testid="onboarding-steps">
@@ -62,7 +78,7 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
             {step < current ? <Check className="w-4 h-4" /> : step}
           </div>
           {step < total && (
-            <div className={`w-10 h-px ${step < current ? "bg-primary" : "bg-border"}`} />
+            <div className={`w-8 h-px ${step < current ? "bg-primary" : "bg-border"}`} />
           )}
         </div>
       ))}
@@ -70,36 +86,88 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
   );
 }
 
+// ── OnboardingPage ────────────────────────────────────────────────────────────
+
 export default function OnboardingPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { tenant } = useAuthStore();
+  const { token, tenant, user } = useAuthStore();
   const { data: plansData } = useListPlans();
   const checkoutMutation = useCreateCheckout();
 
-  const [step, setStep] = useState(1);
+  const [step, setStep]               = useState(1);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
+  const [resending, setResending]     = useState(false);
+  const [savingOrg, setSavingOrg]     = useState(false);
 
   const orgForm = useForm<OrgFormValues>({
     resolver: zodResolver(orgSchema),
     defaultValues: {
-      org_name: tenant?.name ?? "",
-      industry: "",
+      org_name:  tenant?.name ?? "",
+      industry:  "",
       team_size: "",
     },
   });
 
-  const plans = plansData?.data ?? [];
-
+  const plans            = plansData?.data ?? [];
   const selectedPlanData = plans.find((p) => p.key === selectedPlan);
+
+  // ── Email re-send ──────────────────────────────────────────────────────────
+
+  const handleResendVerification = async () => {
+    if (!token) return;
+    setResending(true);
+    try {
+      const res = await fetch("/api/v1/auth/email/verify-resend", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      });
+      if (res.ok) {
+        toast({ title: "Verification email sent", description: "Check your inbox and spam folder." });
+      } else {
+        toast({ title: "Could not resend", description: "Please try again in a minute.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Network error", description: "Please check your connection.", variant: "destructive" });
+    } finally {
+      setResending(false);
+    }
+  };
+
+  // ── Org details submit → persist to backend ────────────────────────────────
+
+  const handleOrgSubmit = async (values: OrgFormValues) => {
+    setSavingOrg(true);
+    try {
+      await fetch("/api/v1/tenant/profile", {
+        method: "PATCH",
+        headers: {
+          Authorization:  `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Accept:         "application/json",
+        },
+        body: JSON.stringify({
+          name:      values.org_name,
+          industry:  values.industry,
+          team_size: values.team_size,
+        }),
+      });
+    } catch {
+      // Non-fatal — continue onboarding even if the call fails
+    } finally {
+      setSavingOrg(false);
+      setStep(4);
+    }
+  };
+
+  // ── Plan selection → Stripe checkout or continue ──────────────────────────
 
   const handleSelectPlanAndContinue = () => {
     if (!selectedPlanData) {
-      setStep(4);
+      setStep(5);
       return;
     }
 
-    // Paid plan — redirect to Stripe checkout
     if (selectedPlanData.price_monthly > 0 && selectedPlanData.stripe_price_id) {
       const origin = window.location.origin;
       checkoutMutation.mutate(
@@ -118,7 +186,7 @@ export default function OnboardingPage() {
             if (res.url) {
               window.location.href = res.url;
             } else {
-              setStep(4);
+              setStep(5);
             }
           },
           onError: () => {
@@ -127,19 +195,20 @@ export default function OnboardingPage() {
               description: "Stripe is not configured yet. You can upgrade from Settings → Billing later.",
               variant: "destructive",
             });
-            setStep(4);
+            setStep(5);
           },
         },
       );
     } else {
-      // Free / no stripe_price_id — just continue to done step
-      setStep(4);
+      setStep(5);
     }
   };
 
   const handleComplete = () => {
     navigate("/", { replace: true });
   };
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div
@@ -155,7 +224,7 @@ export default function OnboardingPage() {
 
         <StepIndicator current={step} total={TOTAL_STEPS} />
 
-        {/* Step 1: Welcome */}
+        {/* ── Step 1: Welcome ─────────────────────────────────────────── */}
         {step === 1 && (
           <Card className="max-w-lg mx-auto shadow-lg border-primary/20">
             <CardHeader className="text-center pb-2">
@@ -194,8 +263,68 @@ export default function OnboardingPage() {
           </Card>
         )}
 
-        {/* Step 2: Organization Details */}
+        {/* ── Step 2: Email verification ──────────────────────────────── */}
         {step === 2 && (
+          <Card className="max-w-lg mx-auto shadow-lg">
+            <CardHeader className="text-center pb-2">
+              <div className="w-16 h-16 bg-amber-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
+                <MailCheck className="w-8 h-8 text-amber-500" />
+              </div>
+              <CardTitle className="text-2xl">Verify your email</CardTitle>
+              <CardDescription className="text-base mt-2">
+                {user?.email_verified_at
+                  ? "Your email is already verified."
+                  : `We sent a verification link to ${user?.email ?? "your email"}. Click the link to continue.`}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-2">
+              {user?.email_verified_at ? (
+                <div className="flex items-center gap-3 bg-green-500/10 text-green-700 dark:text-green-400 p-4 rounded-lg text-sm">
+                  <Check className="w-5 h-5 shrink-0" />
+                  <span>Email verified on {new Date(user.email_verified_at).toLocaleDateString()}</span>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <p className="text-sm text-muted-foreground text-center">
+                    Didn't receive it? Check your spam folder or resend the email.
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleResendVerification}
+                    disabled={resending}
+                  >
+                    {resending ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Sending…</>
+                    ) : (
+                      <><RefreshCw className="w-4 h-4 mr-2" /> Resend verification email</>
+                    )}
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="flex justify-between gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setStep(1)}
+                data-testid="button-onboarding-back-step2"
+              >
+                <ChevronLeft className="w-4 h-4 mr-2" /> Back
+              </Button>
+              <Button
+                className="flex-1"
+                onClick={() => setStep(3)}
+                data-testid="button-onboarding-next-step2"
+              >
+                {user?.email_verified_at ? "Continue" : "Skip for now"} <ChevronRight className="w-4 h-4 ml-2" />
+              </Button>
+            </CardFooter>
+          </Card>
+        )}
+
+        {/* ── Step 3: Organization Details ────────────────────────────── */}
+        {step === 3 && (
           <Card className="max-w-lg mx-auto shadow-lg">
             <CardHeader>
               <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
@@ -208,7 +337,7 @@ export default function OnboardingPage() {
             </CardHeader>
             <Form {...orgForm}>
               <form
-                onSubmit={orgForm.handleSubmit(() => setStep(3))}
+                onSubmit={orgForm.handleSubmit(handleOrgSubmit)}
                 data-testid="form-onboarding-org"
               >
                 <CardContent className="space-y-5">
@@ -290,17 +419,22 @@ export default function OnboardingPage() {
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => setStep(1)}
-                    data-testid="button-onboarding-back-step2"
+                    onClick={() => setStep(2)}
+                    data-testid="button-onboarding-back-step3"
                   >
                     <ChevronLeft className="w-4 h-4 mr-2" /> Back
                   </Button>
                   <Button
                     type="submit"
                     className="flex-1"
-                    data-testid="button-onboarding-next-step2"
+                    disabled={savingOrg}
+                    data-testid="button-onboarding-next-step3"
                   >
-                    Continue <ChevronRight className="w-4 h-4 ml-2" />
+                    {savingOrg ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…</>
+                    ) : (
+                      <>Continue <ChevronRight className="w-4 h-4 ml-2" /></>
+                    )}
                   </Button>
                 </CardFooter>
               </form>
@@ -308,8 +442,8 @@ export default function OnboardingPage() {
           </Card>
         )}
 
-        {/* Step 3: Choose Plan */}
-        {step === 3 && (
+        {/* ── Step 4: Choose Plan ──────────────────────────────────────── */}
+        {step === 4 && (
           <div className="space-y-6">
             <div className="text-center mb-8">
               <h1 className="text-3xl font-bold tracking-tight">Choose your plan</h1>
@@ -323,9 +457,9 @@ export default function OnboardingPage() {
                 {plans
                   .filter((p) => ["free", "professional_monthly", "enterprise"].includes(p.key))
                   .map((plan) => {
-                    const isSelected = selectedPlan === plan.key;
+                    const isSelected    = selectedPlan === plan.key;
                     const isRecommended = plan.key === "professional_monthly";
-                    const isFree = plan.price_monthly === 0 && plan.key === "free";
+                    const isFree        = plan.price_monthly === 0 && plan.key === "free";
                     return (
                       <Card
                         key={plan.key}
@@ -392,15 +526,15 @@ export default function OnboardingPage() {
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4 pt-4 max-w-4xl mx-auto">
               <Button
                 variant="outline"
-                onClick={() => setStep(2)}
-                data-testid="button-onboarding-back-step3"
+                onClick={() => setStep(3)}
+                data-testid="button-onboarding-back-step4"
               >
                 <ChevronLeft className="w-4 h-4 mr-2" /> Back
               </Button>
               <div className="flex gap-3">
                 <Button
                   variant="ghost"
-                  onClick={() => setStep(4)}
+                  onClick={() => setStep(5)}
                   data-testid="button-skip-plan"
                 >
                   Skip for now
@@ -408,7 +542,7 @@ export default function OnboardingPage() {
                 <Button
                   onClick={handleSelectPlanAndContinue}
                   disabled={!selectedPlan || checkoutMutation.isPending}
-                  data-testid="button-onboarding-next-step3"
+                  data-testid="button-onboarding-next-step4"
                 >
                   {checkoutMutation.isPending ? (
                     <>
@@ -426,8 +560,8 @@ export default function OnboardingPage() {
           </div>
         )}
 
-        {/* Step 4: Done */}
-        {step === 4 && (
+        {/* ── Step 5: Done ─────────────────────────────────────────────── */}
+        {step === 5 && (
           <Card className="max-w-lg mx-auto shadow-lg border-green-500/20">
             <CardHeader className="text-center pb-2">
               <div className="w-16 h-16 bg-green-500/10 rounded-2xl flex items-center justify-center mx-auto mb-6">
