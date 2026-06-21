@@ -19,7 +19,7 @@ use Illuminate\Auth\Access\HandlesAuthorization;
  * Ownership enforcement:
  *   - Override `ownerField()` to return the field name that stores the owning user ID
  *     (e.g. "user_id", "created_by"). When non-null, update/delete require the user to
- *     own the record OR have the `manage.{resource}` permission.
+ *     own the record OR have the `{resource}.manage` permission.
  *   - Override `tenantField()` to enforce a tenant boundary on the model record.
  *     Defaults to "tenant_id". Set to null to skip the tenant field check.
  *
@@ -48,12 +48,12 @@ abstract class TenantPolicy
 
     public function viewAny(User $user): bool
     {
-        return $user->hasPermissionTo('view.' . $this->resource());
+        return $user->hasPermissionTo($this->resource() . '.view');
     }
 
     public function view(User $user, mixed $model): bool
     {
-        if (! $user->hasPermissionTo('view.' . $this->resource())) {
+        if (! $user->hasPermissionTo($this->resource() . '.view')) {
             return false;
         }
 
@@ -62,12 +62,12 @@ abstract class TenantPolicy
 
     public function create(User $user): bool
     {
-        return $user->hasPermissionTo('create.' . $this->resource());
+        return $user->hasPermissionTo($this->resource() . '.create');
     }
 
     public function update(User $user, mixed $model): bool
     {
-        if (! $user->hasPermissionTo('update.' . $this->resource())) {
+        if (! $user->hasPermissionTo($this->resource() . '.update')) {
             return false;
         }
 
@@ -77,7 +77,7 @@ abstract class TenantPolicy
 
     public function delete(User $user, mixed $model): bool
     {
-        if (! $user->hasPermissionTo('delete.' . $this->resource())) {
+        if (! $user->hasPermissionTo($this->resource() . '.delete')) {
             return false;
         }
 
@@ -140,7 +140,7 @@ abstract class TenantPolicy
 
     /**
      * Checks ownership when ownerField() is configured.
-     * Users who own the record, OR who have the `manage.{resource}` permission,
+     * Users who own the record, OR who have the `{resource}.manage` permission,
      * pass this check. If ownerField() returns null, the check is skipped (always passes).
      */
     protected function hasOwnerAccess(User $user, mixed $model): bool
@@ -157,6 +157,6 @@ abstract class TenantPolicy
         }
 
         // Users with broad management permission bypass per-record ownership
-        return $user->hasPermissionTo('manage.' . $this->resource());
+        return $user->hasPermissionTo($this->resource() . '.manage');
     }
 }
