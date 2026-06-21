@@ -17,13 +17,16 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
-/** Map Laravel 422 validation errors onto react-hook-form fields. */
+/** Map Laravel 422 validation errors onto react-hook-form fields.
+ *  The generated API client throws ApiError; the response body lives in err.data. */
 function applyServerErrors(
   err: unknown,
   setError: (field: keyof LoginValues, opts: { message: string }) => void,
   toast: ReturnType<typeof useToast>["toast"],
 ) {
-  const res = err as { errors?: Record<string, string[]>; message?: string };
+  // ApiError wraps the response body in .data; fall back for plain error objects.
+  const payload = (err as { data?: unknown })?.data ?? err;
+  const res = payload as { errors?: Record<string, string[]>; message?: string };
   if (res?.errors && typeof res.errors === "object") {
     let hasFieldError = false;
     for (const [field, messages] of Object.entries(res.errors)) {

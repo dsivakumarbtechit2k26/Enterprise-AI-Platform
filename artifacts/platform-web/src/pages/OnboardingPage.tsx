@@ -99,6 +99,7 @@ export default function OnboardingPage() {
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
   const [resending, setResending]     = useState(false);
   const [savingOrg, setSavingOrg]     = useState(false);
+  const [orgSaved, setOrgSaved]       = useState(false);
 
   const orgForm = useForm<OrgFormValues>({
     resolver: zodResolver(orgSchema),
@@ -139,7 +140,7 @@ export default function OnboardingPage() {
   const handleOrgSubmit = async (values: OrgFormValues) => {
     setSavingOrg(true);
     try {
-      await fetch("/api/v1/tenant/profile", {
+      const res = await fetch("/api/v1/tenant/profile", {
         method: "PATCH",
         headers: {
           Authorization:  `Bearer ${token}`,
@@ -152,11 +153,32 @@ export default function OnboardingPage() {
           team_size: values.team_size,
         }),
       });
+
+      if (!res.ok) {
+        let description = "Please check your details and try again.";
+        try {
+          const body = await res.json();
+          if (body?.message) description = body.message;
+        } catch { /* ignore parse errors */ }
+
+        toast({
+          title: "Could not save organization details",
+          description,
+          variant: "destructive",
+        });
+        return; // Stay on step 3
+      }
+
+      setOrgSaved(true);
+      setStep(4);
     } catch {
-      // Non-fatal — continue onboarding even if the call fails
+      toast({
+        title: "Network error",
+        description: "Could not connect to the server. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setSavingOrg(false);
-      setStep(4);
     }
   };
 
@@ -575,7 +597,7 @@ export default function OnboardingPage() {
             <CardContent className="pt-4">
               <div className="space-y-3 bg-muted/50 p-4 rounded-lg text-sm">
                 {[
-                  "Organization profile saved",
+                  orgSaved ? "Organization profile saved" : "Organization profile (save skipped — update in Settings)",
                   `Plan: ${selectedPlanData?.name ?? "Free"}`,
                   "Team roles and permissions are ready",
                   "Billing can be configured in Settings",
