@@ -113,71 +113,69 @@ Route::prefix('v1')->group(function () {
         // ── RBAC — tenant-scoped ───────────────────────────────────────────────
         // tenant.permissions is already on the parent group; RBAC routes just
         // add per-route permission guards via the permission: middleware alias.
-        Route::prefix('rbac')->group(function () {
 
-            // Current user's permissions in active tenant
-            Route::get('/my-permissions', [PermissionController::class, 'userPermissions'])
-                ->name('api.v1.rbac.my_permissions');
+        // Current user's permissions in active tenant
+        Route::get('/my-permissions', [PermissionController::class, 'userPermissions'])
+            ->name('api.v1.rbac.my_permissions');
 
-            // Permissions (read + grant/revoke)
-            Route::get('/permissions', [PermissionController::class, 'index'])
-                ->middleware('permission:permissions.view')
-                ->name('api.v1.rbac.permissions.index');
+        // Permissions (read + grant/revoke)
+        Route::get('/permissions', [PermissionController::class, 'index'])
+            ->middleware('permission:permissions.view')
+            ->name('api.v1.rbac.permissions.index');
 
-            Route::get('/permissions/{permissionId}', [PermissionController::class, 'show'])
-                ->middleware('permission:permissions.view')
-                ->name('api.v1.rbac.permissions.show');
+        Route::get('/permissions/{permissionId}', [PermissionController::class, 'show'])
+            ->middleware('permission:permissions.view')
+            ->name('api.v1.rbac.permissions.show');
 
-            Route::post('/permissions/grant', [PermissionController::class, 'grantToUser'])
-                ->middleware('permission:permissions.assign')
-                ->name('api.v1.rbac.permissions.grant');
+        Route::post('/permissions/grant', [PermissionController::class, 'grantToUser'])
+            ->middleware('permission:permissions.assign')
+            ->name('api.v1.rbac.permissions.grant');
 
-            Route::post('/permissions/revoke', [PermissionController::class, 'revokeFromUser'])
-                ->middleware('permission:permissions.assign')
-                ->name('api.v1.rbac.permissions.revoke');
+        Route::post('/permissions/revoke', [PermissionController::class, 'revokeFromUser'])
+            ->middleware('permission:permissions.assign')
+            ->name('api.v1.rbac.permissions.revoke');
 
-            // Roles CRUD + assignment
-            Route::get('/roles', [RoleController::class, 'index'])
-                ->middleware('permission:roles.view')
-                ->name('api.v1.rbac.roles.index');
+        // Roles CRUD + assignment
+        Route::get('/roles', [RoleController::class, 'index'])
+            ->middleware('permission:roles.view')
+            ->name('api.v1.rbac.roles.index');
 
-            Route::post('/roles', [RoleController::class, 'store'])
-                ->middleware('permission:roles.create')
-                ->name('api.v1.rbac.roles.store');
+        Route::post('/roles', [RoleController::class, 'store'])
+            ->middleware('permission:roles.create')
+            ->name('api.v1.rbac.roles.store');
 
-            Route::get('/roles/{roleId}', [RoleController::class, 'show'])
-                ->middleware('permission:roles.view')
-                ->name('api.v1.rbac.roles.show');
+        Route::get('/roles/{roleId}', [RoleController::class, 'show'])
+            ->middleware('permission:roles.view')
+            ->name('api.v1.rbac.roles.show');
 
-            Route::patch('/roles/{roleId}', [RoleController::class, 'update'])
-                ->middleware('permission:roles.update')
-                ->name('api.v1.rbac.roles.update');
+        Route::patch('/roles/{roleId}', [RoleController::class, 'update'])
+            ->middleware('permission:roles.update')
+            ->name('api.v1.rbac.roles.update');
 
-            Route::delete('/roles/{roleId}', [RoleController::class, 'destroy'])
-                ->middleware('permission:roles.delete')
-                ->name('api.v1.rbac.roles.destroy');
+        Route::delete('/roles/{roleId}', [RoleController::class, 'destroy'])
+            ->middleware('permission:roles.delete')
+            ->name('api.v1.rbac.roles.destroy');
 
-            Route::post('/roles/{roleId}/assign', [RoleController::class, 'assignToUser'])
-                ->middleware('permission:roles.assign')
-                ->name('api.v1.rbac.roles.assign');
+        Route::post('/roles/{roleId}/assign', [RoleController::class, 'assignToUser'])
+            ->middleware('permission:roles.assign')
+            ->name('api.v1.rbac.roles.assign');
 
-            Route::post('/roles/{roleId}/remove', [RoleController::class, 'removeFromUser'])
-                ->middleware('permission:roles.assign')
-                ->name('api.v1.rbac.roles.remove');
+        Route::post('/roles/{roleId}/remove', [RoleController::class, 'removeFromUser'])
+            ->middleware('permission:roles.assign')
+            ->name('api.v1.rbac.roles.remove');
 
-            // Field permissions
-            Route::get('/roles/{roleId}/field-permissions', [FieldPermissionController::class, 'index'])
-                ->middleware('permission:field_permissions.manage')
-                ->name('api.v1.rbac.field_permissions.index');
+        // Field permissions
+        Route::get('/roles/{roleId}/field-permissions', [FieldPermissionController::class, 'index'])
+            ->middleware('permission:field_permissions.manage')
+            ->name('api.v1.rbac.field_permissions.index');
 
-            Route::put('/roles/{roleId}/field-permissions', [FieldPermissionController::class, 'upsert'])
-                ->middleware('permission:field_permissions.manage')
-                ->name('api.v1.rbac.field_permissions.upsert');
+        Route::put('/roles/{roleId}/field-permissions', [FieldPermissionController::class, 'upsert'])
+            ->middleware('permission:field_permissions.manage')
+            ->name('api.v1.rbac.field_permissions.upsert');
 
-            Route::delete('/roles/{roleId}/field-permissions/{fieldPermId}', [FieldPermissionController::class, 'destroy'])
-                ->middleware('permission:field_permissions.manage')
-                ->name('api.v1.rbac.field_permissions.destroy');
-        });
+        Route::delete('/roles/{roleId}/field-permissions/{fieldPermId}', [FieldPermissionController::class, 'destroy'])
+            ->middleware('permission:field_permissions.manage')
+            ->name('api.v1.rbac.field_permissions.destroy');
     });
 
     // ── Platform admin (requires X-Platform-Key) ──────────────────────────────

@@ -13,15 +13,13 @@ class CustomerPolicy extends TenantPolicy
         return 'customers';
     }
 
-    /*
-     * Override any method from TenantPolicy to customise behaviour.
-     *
-     * Example — only the record owner can update:
-     *
-     * public function update(User $user, mixed $model): bool
-     * {
-     *     return parent::update($user, $model)
-     *         && $model->user_id === $user->id;
-     * }
+    /**
+     * Ownership is enforced via the created_by field.
+     * Users who did not create a customer record need the `customers.manage`
+     * permission to update or delete it.
      */
+    protected function ownerField(): ?string
+    {
+        return 'created_by';
+    }
 }
