@@ -59,18 +59,45 @@ export function disconnectEcho(): void {
   }
 }
 
+interface BroadcastNotificationEvent {
+  id?: string;
+  title?: string;
+  body?: string;
+  message?: string;
+  type?: AppNotification["type"];
+  priority?: "low" | "normal" | "high" | "critical";
+  created_at?: string;
+  [key: string]: unknown;
+}
+
 export function subscribeToTenantChannel(tenantId: string): void {
   const echo = initEcho();
   const { addNotification } = useNotificationStore.getState();
 
   echo.private(`tenant.${tenantId}`)
-    .listen(".notification", (event: Record<string, unknown>) => {
+    // Primary event: NotificationCreated (matches broadcastAs() on the backend event class)
+    .listen(".NotificationCreated", (event: BroadcastNotificationEvent) => {
+      const notifType = event.type ?? "info";
       addNotification({
+        id: event.id,
+        title: String(event.title ?? event.message ?? "Notification"),
+        body: String(event.body ?? event.message ?? ""),
+        type: notifType,
+        created_at: event.created_at ?? new Date().toISOString(),
+        data: event as Record<string, unknown>,
+        priority: event.priority,
+      });
+    })
+    // Legacy fallback event name
+    .listen(".notification", (event: BroadcastNotificationEvent) => {
+      addNotification({
+        id: event.id,
         title: String(event.title ?? "Notification"),
         body: String(event.body ?? ""),
-        type: (event.type as AppNotification["type"]) ?? "info",
-        created_at: new Date().toISOString(),
+        type: event.type ?? "info",
+        created_at: event.created_at ?? new Date().toISOString(),
         data: event as Record<string, unknown>,
+        priority: event.priority,
       });
     });
 }

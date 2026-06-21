@@ -1,9 +1,12 @@
+import { Suspense } from "react";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ProtectedRoute, GuestRoute } from "@/components/ProtectedRoute";
+import { RouteErrorBoundary } from "@/components/RouteErrorBoundary";
 import { initApiConfig } from "@/lib/apiConfig";
+import { Loader2 } from "lucide-react";
 
 initApiConfig();
 
@@ -18,15 +21,25 @@ const queryClient = new QueryClient({
 
 const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 
+function PageLoader() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <Loader2 className="w-8 h-8 text-primary animate-spin" />
+    </div>
+  );
+}
+
 const router = createBrowserRouter(
   [
     {
       path: "/",
+      errorElement: <RouteErrorBoundary />,
       lazy: async () => {
         const { RootLayout } = await import("@/layouts/RootLayout");
         return { Component: RootLayout };
       },
       children: [
+        // ── Guest-only routes ───────────────────────────────────────────────
         {
           element: <GuestRoute />,
           children: [
@@ -67,6 +80,17 @@ const router = createBrowserRouter(
             },
           ],
         },
+
+        // ── OAuth callback (accessible regardless of auth state) ────────────
+        {
+          path: "auth/callback",
+          lazy: async () => {
+            const { default: Page } = await import("@/pages/auth/OAuthCallbackPage");
+            return { Component: Page };
+          },
+        },
+
+        // ── Protected routes ────────────────────────────────────────────────
         {
           element: <ProtectedRoute />,
           children: [
@@ -83,6 +107,7 @@ const router = createBrowserRouter(
                 const { AppShell } = await import("@/layouts/AppShell");
                 return { Component: AppShell };
               },
+              errorElement: <RouteErrorBoundary />,
               children: [
                 {
                   index: true,
@@ -119,31 +144,44 @@ const router = createBrowserRouter(
                     return { Component: Page };
                   },
                 },
+                // RBAC routes — require roles.view permission
                 {
-                  path: "roles",
-                  lazy: async () => {
-                    const { default: Page } = await import("@/pages/RolesPage");
-                    return { Component: Page };
-                  },
+                  element: <ProtectedRoute requiredPermission="roles.view" />,
+                  children: [
+                    {
+                      path: "roles",
+                      lazy: async () => {
+                        const { default: Page } = await import("@/pages/RolesPage");
+                        return { Component: Page };
+                      },
+                    },
+                    {
+                      path: "roles/:roleId",
+                      lazy: async () => {
+                        const { default: Page } = await import("@/pages/RoleDetailPage");
+                        return { Component: Page };
+                      },
+                    },
+                  ],
                 },
                 {
-                  path: "roles/:roleId",
-                  lazy: async () => {
-                    const { default: Page } = await import("@/pages/RoleDetailPage");
-                    return { Component: Page };
-                  },
-                },
-                {
-                  path: "permissions",
-                  lazy: async () => {
-                    const { default: Page } = await import("@/pages/PermissionsPage");
-                    return { Component: Page };
-                  },
+                  element: <ProtectedRoute requiredPermission="permissions.view" />,
+                  children: [
+                    {
+                      path: "permissions",
+                      lazy: async () => {
+                        const { default: Page } = await import("@/pages/PermissionsPage");
+                        return { Component: Page };
+                      },
+                    },
+                  ],
                 },
               ],
             },
           ],
         },
+
+        // ── Error pages ─────────────────────────────────────────────────────
         {
           path: "403",
           lazy: async () => {
@@ -168,7 +206,9 @@ export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <RouterProvider router={router} />
+        <Suspense fallback={<PageLoader />}>
+          <RouterProvider router={router} />
+        </Suspense>
         <Toaster />
       </TooltipProvider>
     </QueryClientProvider>

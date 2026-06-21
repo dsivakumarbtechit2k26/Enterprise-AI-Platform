@@ -5,6 +5,7 @@ export interface Notification {
   title: string;
   body: string;
   type: "info" | "success" | "warning" | "error";
+  priority?: "low" | "normal" | "high" | "critical";
   read: boolean;
   created_at: string;
   data?: Record<string, unknown>;
@@ -15,7 +16,7 @@ interface NotificationState {
   unreadCount: number;
   connected: boolean;
 
-  addNotification: (n: Omit<Notification, "id" | "read">) => void;
+  addNotification: (n: Omit<Notification, "id" | "read"> & { id?: string }) => void;
   markRead: (id: string) => void;
   markAllRead: () => void;
   setConnected: (v: boolean) => void;
@@ -30,7 +31,7 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
   addNotification: (n) => {
     const item: Notification = {
       ...n,
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      id: n.id ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       read: false,
     };
     set((s) => ({
@@ -44,7 +45,10 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
       notifications: s.notifications.map((n) =>
         n.id === id ? { ...n, read: true } : n,
       ),
-      unreadCount: Math.max(0, s.unreadCount - (s.notifications.find((n) => n.id === id)?.read ? 0 : 1)),
+      unreadCount: Math.max(
+        0,
+        s.unreadCount - (s.notifications.find((n) => n.id === id)?.read ? 0 : 1),
+      ),
     })),
 
   markAllRead: () =>

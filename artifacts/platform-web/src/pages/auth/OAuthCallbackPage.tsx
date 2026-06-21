@@ -1,0 +1,71 @@
+import { useEffect, useRef } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuthStore } from "@/stores/authStore";
+import { useToast } from "@/hooks/use-toast";
+import { Loader2 } from "lucide-react";
+
+/**
+ * Handles the OAuth redirect from the backend after social authentication.
+ *
+ * The backend redirects here with one of:
+ *   - ?token=<jwt>&tenant_id=<id>  → successful auth
+ *   - ?error=<message>             → auth failure
+ *
+ * We parse the params, populate the auth store, and redirect to the app.
+ */
+export default function OAuthCallbackPage() {
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const setAuth = useAuthStore((s) => s.setAuth);
+  const { toast } = useToast();
+  const handled = useRef(false);
+
+  useEffect(() => {
+    if (handled.current) return;
+    handled.current = true;
+
+    const token = searchParams.get("token");
+    const error = searchParams.get("error");
+
+    if (error) {
+      toast({
+        title: "Sign-in failed",
+        description: decodeURIComponent(error),
+        variant: "destructive",
+      });
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    if (!token) {
+      toast({
+        title: "Sign-in failed",
+        description: "No authentication token received from provider.",
+        variant: "destructive",
+      });
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    // Store token; user/tenant profile will be loaded by AppShell's useGetMe call.
+    // We pass minimal stubs here — setMe() will overwrite them once /me responds.
+    setAuth({
+      token,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      user: null as any,
+      tenant: null,
+    });
+
+    navigate("/", { replace: true });
+  }, [searchParams, navigate, setAuth, toast]);
+
+  return (
+    <div
+      className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background"
+      data-testid="page-oauth-callback"
+    >
+      <Loader2 className="w-10 h-10 text-primary animate-spin" />
+      <p className="text-muted-foreground text-sm">Completing sign-in…</p>
+    </div>
+  );
+}
