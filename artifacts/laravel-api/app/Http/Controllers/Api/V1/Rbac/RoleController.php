@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 class RoleController extends Controller
 {
     // ── List roles ────────────────────────────────────────────────────────────
+    // Read: show both central + tenant roles (actors need to see the full picture)
 
     public function index(Request $request): JsonResponse
     {
@@ -41,8 +42,8 @@ class RoleController extends Controller
         $actor  = $request->user();
 
         $validated = $request->validate([
-            'name'        => ['required', 'string', 'max:100'],
-            'permissions' => ['nullable', 'array'],
+            'name'          => ['required', 'string', 'max:100'],
+            'permissions'   => ['nullable', 'array'],
             'permissions.*' => ['string', 'exists:permissions,name'],
         ]);
 
@@ -76,21 +77,25 @@ class RoleController extends Controller
     }
 
     // ── Show role ─────────────────────────────────────────────────────────────
+    // Read: can view both central + tenant roles
 
     public function show(Request $request, int $roleId): JsonResponse
     {
-        $role = $this->findRole($roleId, $request->attributes->get('active_tenant_id'));
+        $role = $this->findRoleForRead($roleId, $request->attributes->get('active_tenant_id'));
 
         return response()->json(['data' => $this->formatRole($role->load('permissions'))]);
     }
 
     // ── Update role ───────────────────────────────────────────────────────────
+    // Mutation: restricted to roles owned by the current team only
 
     public function update(Request $request, int $roleId): JsonResponse
     {
         $teamId = $request->attributes->get('active_tenant_id');
         $actor  = $request->user();
-        $role   = $this->findRole($roleId, $teamId);
+        // findRoleForMutation scopes to the active team — central roles are never
+        // returned here for tenant actors, preventing cross-scope mutations.
+        $role = $this->findRoleForMutation($roleId, $teamId);
 
         if (in_array($role->name, ['super-admin', 'platform-admin', 'tenant-admin'])) {
             return response()->json([
@@ -145,7 +150,7 @@ class RoleController extends Controller
     {
         $teamId = $request->attributes->get('active_tenant_id');
         $actor  = $request->user();
-        $role   = $this->findRole($roleId, $teamId);
+        $role   = $this->findRoleForMutation($roleId, $teamId);
 
         if (in_array($role->name, ['super-admin', 'platform-admin', 'tenant-admin', 'manager', 'member', 'viewer'])) {
             return response()->json([
@@ -175,7 +180,7 @@ class RoleController extends Controller
     {
         $teamId = $request->attributes->get('active_tenant_id');
         $actor  = $request->user();
-        $role   = $this->findRole($roleId, $teamId);
+        $role   = $this->findRoleForMutation($roleId, $teamId);
 
         $validated = $request->validate([
             'user_id' => ['required', 'integer', 'exists:central.users,id'],
@@ -203,7 +208,7 @@ class RoleController extends Controller
     {
         $teamId = $request->attributes->get('active_tenant_id');
         $actor  = $request->user();
-        $role   = $this->findRole($roleId, $teamId);
+        $role   = $this->findRoleForMutation($roleId, $teamId);
 
         $validated = $request->validate([
             'user_id' => ['required', 'integer', 'exists:central.users,id'],
@@ -227,7 +232,11 @@ class RoleController extends Controller
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private function findRole(int $roleId, ?string $teamId): Role
+    /**
+     * For READ operations (show, index): finds roles visible to the active team —
+     * both central roles and the current tenant's own roles.
+     */
+    private function findRoleForRead(int $roleId, ?string $teamId): Role
     {
         return Role::where('id', $roleId)
             ->where(function ($q) use ($teamId) {
@@ -236,6 +245,21 @@ class RoleController extends Controller
                     $q->orWhere('team_id', $teamId);
                 }
             })
+            ->firstOrFail();
+    }
+
+    /**
+     * For MUTATION operations (update, delete, assign, remove): strictly scoped to
+     * the active team only. Tenant actors CANNOT mutate central/platform roles.
+     * Platform actors (team = 'central') can only mutate central roles.
+     *
+     * This prevents cross-scope authorization breaches where a tenant admin with
+     * `roles.*` permissions could affect platform-scoped role objects.
+     */
+    private function findRoleForMutation(int $roleId, ?string $teamId): Role
+    {
+        return Role::where('id', $roleId)
+            ->where('team_id', $teamId ?? RbacSeeder::CENTRAL_TEAM)
             ->firstOrFail();
     }
 
