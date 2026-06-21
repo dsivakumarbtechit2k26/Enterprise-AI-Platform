@@ -112,6 +112,12 @@ class StripeWebhookController extends WebhookController
     }
 
     // ── invoice.payment_failed ────────────────────────────────────────────────
+    //
+    // Guarantees day 1/3/7 dunning cadence by scheduling all three emails
+    // on the FIRST payment failure, not tied to Stripe retry timing.
+    // Stripe may retry on any schedule; we schedule all jobs upfront so
+    // the cadence is fixed relative to the first failure event.
+    // Subsequent attempt_count > 1 events are logged but no extra emails queued.
 
     public function handleInvoicePaymentFailed(array $payload): Response
     {
@@ -125,18 +131,18 @@ class StripeWebhookController extends WebhookController
 
         $attemptCount = $invoice['attempt_count'] ?? 1;
 
-        // Schedule dunning emails: day 1 immediately, day 3 on attempt 2, day 7 on attempt 3
-        $delays = [1 => 0, 2 => now()->addDays(2), 3 => now()->addDays(6)];
-        $delay  = $delays[$attemptCount] ?? null;
-
-        if ($delay !== null) {
-            $job = new SendDunningEmailJob($tenant->id, $attemptCount);
-            $delay === 0 ? dispatch($job) : dispatch($job)->delay($delay);
+        // Schedule all three dunning emails on first failure only.
+        // This ensures fixed day 1/3/7 cadence independent of Stripe retry timing.
+        if ($attemptCount === 1) {
+            dispatch(new SendDunningEmailJob($tenant->id, 1));                           // day 1 — immediate
+            dispatch(new SendDunningEmailJob($tenant->id, 2))->delay(now()->addDays(3)); // day 3
+            dispatch(new SendDunningEmailJob($tenant->id, 3))->delay(now()->addDays(7)); // day 7
         }
 
         Log::warning('Stripe: invoice.payment_failed', [
             'tenant_id' => $tenant->id,
             'attempt'   => $attemptCount,
+            'dunning_scheduled' => $attemptCount === 1,
         ]);
 
         return $this->successMethod();

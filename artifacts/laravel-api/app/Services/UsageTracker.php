@@ -42,13 +42,13 @@ class UsageTracker
     }
 
     // ── Active user count (DB) ────────────────────────────────────────────────
+    // Every row in user_tenants represents an active member (no status column).
 
     public function getActiveUserCount(string $tenantId): int
     {
         return DB::connection('central')
             ->table('user_tenants')
             ->where('tenant_id', $tenantId)
-            ->where('status', 'active')
             ->count();
     }
 
