@@ -69,21 +69,7 @@ class FieldPermissionController extends Controller
             ]
         );
 
-        RbacAuditLogger::log(
-            actorId:       $actor->id,
-            event:         $existing ? 'field_permission.updated' : 'field_permission.created',
-            auditableType: FieldPermission::class,
-            auditableId:   $fp->id,
-            tenantId:      $teamId,
-            oldValues:     $oldValues,
-            newValues:     [
-                'role_id'     => $role->id,
-                'model_class' => $validated['model_class'],
-                'field_name'  => $validated['field_name'],
-                'can_read'    => $validated['can_read'],
-                'can_write'   => $validated['can_write'],
-            ],
-        );
+        RbacAuditLogger::fieldPermissionSaved($fp, ! $existing, $oldValues, $teamId, $actor);
 
         return response()->json([
             'data'    => $fp,
@@ -114,14 +100,7 @@ class FieldPermissionController extends Controller
 
         $fp->delete();
 
-        RbacAuditLogger::log(
-            actorId:       $actor->id,
-            event:         'field_permission.deleted',
-            auditableType: FieldPermission::class,
-            auditableId:   $fieldPermId,
-            tenantId:      $teamId,
-            oldValues:     $oldValues,
-        );
+        RbacAuditLogger::fieldPermissionDeleted($fieldPermId, $oldValues, $teamId, $actor);
 
         return response()->json(['message' => 'Field permission deleted.']);
     }

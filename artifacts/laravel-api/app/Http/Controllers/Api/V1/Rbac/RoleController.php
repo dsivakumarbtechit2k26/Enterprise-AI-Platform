@@ -58,17 +58,7 @@ class RoleController extends Controller
             $role->syncPermissions($validated['permissions']);
         }
 
-        RbacAuditLogger::log(
-            actorId:       $actor->id,
-            event:         'role.created',
-            auditableType: Role::class,
-            auditableId:   $role->id,
-            tenantId:      $teamId,
-            newValues:     [
-                'name'        => $role->name,
-                'permissions' => $validated['permissions'] ?? [],
-            ],
-        );
+        RbacAuditLogger::roleCreated($role, $teamId, $actor);
 
         return response()->json([
             'data'    => $this->formatRole($role->fresh('permissions')),
@@ -125,17 +115,12 @@ class RoleController extends Controller
 
         $role->refresh()->load('permissions');
 
-        RbacAuditLogger::log(
-            actorId:       $actor->id,
-            event:         'role.updated',
-            auditableType: Role::class,
-            auditableId:   $role->id,
-            tenantId:      $teamId,
-            oldValues:     $oldValues,
-            newValues:     [
-                'name'        => $role->name,
-                'permissions' => $role->permissions->pluck('name')->toArray(),
-            ],
+        RbacAuditLogger::roleUpdated(
+            $role,
+            $oldValues,
+            ['name' => $role->name, 'permissions' => $role->permissions->pluck('name')->toArray()],
+            $teamId,
+            $actor,
         );
 
         return response()->json([
@@ -162,14 +147,7 @@ class RoleController extends Controller
         $roleName = $role->name;
         $role->delete();
 
-        RbacAuditLogger::log(
-            actorId:       $actor->id,
-            event:         'role.deleted',
-            auditableType: Role::class,
-            auditableId:   $roleId,
-            tenantId:      $teamId,
-            oldValues:     ['name' => $roleName],
-        );
+        RbacAuditLogger::roleDeleted($roleId, $roleName, $teamId, $actor);
 
         return response()->json(['message' => 'Role deleted.']);
     }
@@ -190,14 +168,7 @@ class RoleController extends Controller
         // Team context already set by middleware
         $user->assignRole($role);
 
-        RbacAuditLogger::log(
-            actorId:       $actor->id,
-            event:         'role.assigned',
-            auditableType: User::class,
-            auditableId:   $user->id,
-            tenantId:      $teamId,
-            newValues:     ['role' => $role->name, 'assigned_by' => $actor->id],
-        );
+        RbacAuditLogger::roleAssigned($user, $role->name, $teamId, $actor);
 
         return response()->json(['message' => "Role '{$role->name}' assigned to user."]);
     }
@@ -218,14 +189,7 @@ class RoleController extends Controller
         // Team context already set by middleware
         $user->removeRole($role);
 
-        RbacAuditLogger::log(
-            actorId:       $actor->id,
-            event:         'role.revoked',
-            auditableType: User::class,
-            auditableId:   $user->id,
-            tenantId:      $teamId,
-            oldValues:     ['role' => $role->name, 'revoked_by' => $actor->id],
-        );
+        RbacAuditLogger::roleRevoked($user, $role->name, $teamId, $actor);
 
         return response()->json(['message' => "Role '{$role->name}' removed from user."]);
     }

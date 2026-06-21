@@ -4,3 +4,4 @@
 - [Laravel API auth patterns](laravel-api-auth-patterns.md) — key patterns for stateless Sanctum token auth: custom Authenticate middleware, ResetPassword URL, session vs cache, table names
 - [RBAC team sentinel](rbac-team-sentinel.md) — PostgreSQL PKs can't be NULL; use string 'central' not null for platform-scope team_id in spatie teams feature
 - [Spatie middleware pattern](spatie-middleware-pattern.md) — ResolveTenantPermissions must set both active_tenant_id request attribute AND registrar team; controllers must NOT call setPermissionsTeamId again or they break it
+- [Spatie activitylog quirks](spatie-activitylog-quirks.md) — trait is Concerns\LogsActivity not Traits\LogsActivity; use dontLogEmptyChanges(); attribute_changes column must be added manually to activity_log

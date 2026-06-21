@@ -88,17 +88,7 @@ class PermissionController extends Controller
         // Team context already set by middleware
         $user->givePermissionTo($validated['permissions']);
 
-        RbacAuditLogger::log(
-            actorId:       $actor->id,
-            event:         'permission.granted',
-            auditableType: User::class,
-            auditableId:   $user->id,
-            tenantId:      $teamId,
-            newValues:     [
-                'permissions' => $validated['permissions'],
-                'granted_by'  => $actor->id,
-            ],
-        );
+        RbacAuditLogger::permissionsGranted($user, $validated['permissions'], $teamId, $actor);
 
         return response()->json([
             'message'     => 'Permissions granted.',
@@ -125,17 +115,7 @@ class PermissionController extends Controller
             $user->revokePermissionTo($perm);
         }
 
-        RbacAuditLogger::log(
-            actorId:       $actor->id,
-            event:         'permission.revoked',
-            auditableType: User::class,
-            auditableId:   $user->id,
-            tenantId:      $teamId,
-            oldValues:     [
-                'permissions' => $validated['permissions'],
-                'revoked_by'  => $actor->id,
-            ],
-        );
+        RbacAuditLogger::permissionsRevoked($user, $validated['permissions'], $teamId, $actor);
 
         return response()->json([
             'message'     => 'Permissions revoked.',

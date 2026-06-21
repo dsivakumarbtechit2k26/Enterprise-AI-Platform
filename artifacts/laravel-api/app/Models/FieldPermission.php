@@ -6,9 +6,13 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Spatie\Activitylog\Models\Concerns\LogsActivity;
+use Spatie\Activitylog\Support\LogOptions;
 
 class FieldPermission extends Model
 {
+    use LogsActivity;
+
     protected $connection = 'central';
     protected $table = 'field_permissions';
 
@@ -32,5 +36,15 @@ class FieldPermission extends Model
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class);
+    }
+
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logFillable()
+            ->logOnlyDirty()
+            ->dontLogEmptyChanges()
+            ->useLogName('rbac')
+            ->setDescriptionForEvent(fn (string $eventName) => "FieldPermission {$eventName}");
     }
 }

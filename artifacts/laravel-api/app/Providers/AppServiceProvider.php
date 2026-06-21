@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Console\Commands\MakeTenantPolicyCommand;
+use App\Models\User;
+use App\Observers\UserRoleObserver;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -40,6 +42,9 @@ class AppServiceProvider extends ServiceProvider
                 ->where('roles.name', 'super-admin')
                 ->exists() ? true : null;
         });
+
+        // Register observer for User role pivot events
+        User::observe(UserRoleObserver::class);
 
         if ($this->app->runningInConsole()) {
             $this->commands([
