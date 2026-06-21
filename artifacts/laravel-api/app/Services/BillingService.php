@@ -81,16 +81,33 @@ class BillingService
     /**
      * Create a Stripe Checkout Session for upgrading to a paid plan.
      *
+     * Embeds tenant_id and plan_key in both the session metadata and the
+     * subscription_data metadata so that every downstream webhook (checkout.session
+     * .completed, customer.subscription.created, customer.subscription.updated) can
+     * activate the plan reliably without depending on event ordering.
+     *
      * @throws \RuntimeException if Stripe is not configured
      */
-    public function createCheckoutSession(Tenant $tenant, string $priceId, string $successUrl, string $cancelUrl): string
-    {
+    public function createCheckoutSession(
+        Tenant $tenant,
+        string $priceId,
+        string $planKey,
+        string $successUrl,
+        string $cancelUrl,
+    ): string {
         $this->ensureStripeCustomer($tenant);
+
+        $meta = [
+            'tenant_id' => $tenant->id,
+            'plan_key'  => $planKey,
+        ];
 
         $checkout = $tenant->newSubscription('default', $priceId)
             ->checkout([
-                'success_url' => $successUrl . '?session_id={CHECKOUT_SESSION_ID}',
-                'cancel_url'  => $cancelUrl,
+                'success_url'       => $successUrl . '?session_id={CHECKOUT_SESSION_ID}',
+                'cancel_url'        => $cancelUrl,
+                'metadata'          => $meta,
+                'subscription_data' => ['metadata' => $meta],
             ]);
 
         return $checkout->url;

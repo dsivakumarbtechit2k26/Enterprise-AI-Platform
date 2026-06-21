@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1\Billing;
 
 use App\Http\Controllers\Controller;
+use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Services\BillingService;
 use App\Services\InvoiceService;
@@ -41,12 +42,25 @@ class BillingController extends Controller
             'cancel_url'  => ['required', 'url'],
         ]);
 
+        // Validate price_id against active subscription plans to prevent
+        // mismatches between Stripe prices and internal plan mappings.
+        $plan = SubscriptionPlan::where('stripe_price_id', $validated['price_id'])
+            ->where('is_active', true)
+            ->first();
+
+        if (! $plan) {
+            return response()->json([
+                'message' => 'The selected price does not match any active subscription plan.',
+            ], 422);
+        }
+
         $tenant = $this->resolveTenant($request);
 
         try {
             $url = $this->billing->createCheckoutSession(
                 $tenant,
                 $validated['price_id'],
+                $plan->key,
                 $validated['success_url'],
                 $validated['cancel_url'],
             );

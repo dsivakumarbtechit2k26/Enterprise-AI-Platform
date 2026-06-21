@@ -20,28 +20,76 @@ class StripeWebhookController extends WebhookController
     }
 
     // ── checkout.session.completed ────────────────────────────────────────────
+    //
+    // Sets the plan immediately on payment success. Resolves tenant from
+    // metadata.tenant_id (set by BillingService) with a customer-ID fallback
+    // so that plan activation succeeds even if metadata was partially missing.
+    // customer.subscription.created fires shortly after and will also sync.
 
     public function handleCheckoutSessionCompleted(array $payload): Response
     {
         $session  = $payload['data']['object'];
+
+        // Resolve tenant — prefer explicit metadata, fall back to customer ID
         $tenantId = $session['metadata']['tenant_id'] ?? null;
+        $tenant   = $tenantId
+            ? Tenant::find($tenantId)
+            : Tenant::where('stripe_id', $session['customer'] ?? '')->first();
 
-        if (! $tenantId) {
-            return $this->successMethod();
-        }
-
-        $tenant = Tenant::find($tenantId);
         if (! $tenant) {
             return $this->successMethod();
         }
 
-        // Best-effort plan key sync; definitive update arrives via subscription.updated
-        if ($planKey = $session['metadata']['plan_key'] ?? null) {
-            $tenant->update(['plan' => $planKey]);
+        $planKey = $session['metadata']['plan_key'] ?? null;
+
+        if ($planKey) {
+            $tenant->update(['plan' => $planKey, 'subscription_ends_at' => null]);
             $this->billing->bustPlanCache($tenant->id);
         }
 
-        Log::info('Stripe: checkout.session.completed', ['tenant_id' => $tenantId]);
+        Log::info('Stripe: checkout.session.completed', [
+            'tenant_id' => $tenant->id,
+            'plan'      => $planKey,
+        ]);
+
+        return $this->successMethod();
+    }
+
+    // ── customer.subscription.created ────────────────────────────────────────
+    //
+    // Provides deterministic plan activation on initial subscription creation.
+    // Fires before customer.subscription.updated, so the plan is set as early
+    // as possible regardless of event ordering or metadata availability.
+    // Resolves plan key from metadata (set by checkout) with price-ID fallback.
+
+    public function handleCustomerSubscriptionCreated(array $payload): Response
+    {
+        // Let Cashier record the subscription row first
+        parent::handleCustomerSubscriptionCreated($payload);
+
+        $sub      = $payload['data']['object'];
+        $stripeId = $sub['customer'];
+        $tenant   = Tenant::where('stripe_id', $stripeId)->first();
+
+        if (! $tenant) {
+            return $this->successMethod();
+        }
+
+        $priceId = $sub['items']['data'][0]['price']['id'] ?? null;
+        $planKey = $sub['metadata']['plan_key'] ?? $this->planKeyFromPriceId($priceId);
+
+        if ($planKey) {
+            $tenant->update([
+                'plan'                 => $planKey,
+                'subscription_ends_at' => null,
+            ]);
+            $this->billing->bustPlanCache($tenant->id);
+        }
+
+        Log::info('Stripe: customer.subscription.created', [
+            'tenant_id' => $tenant->id,
+            'plan'      => $planKey,
+        ]);
 
         return $this->successMethod();
     }
