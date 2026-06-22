@@ -197,6 +197,14 @@ class PlatformSettingsSeeder extends Seeder
                 'description' => 'Send an admin alert whenever a payment failure (invoice.payment_failed) is detected.',
                 'is_public'   => false,
             ],
+            [
+                'key'         => 'security.alert_cooldown_minutes',
+                'value'       => '30',
+                'type'        => 'integer',
+                'group'       => 'security',
+                'description' => 'Minimum minutes between repeated security alert emails for the same event type and subject. Set to 0 to disable cooldown (all qualifying events send an email).',
+                'is_public'   => false,
+            ],
 
             // ── Features ──────────────────────────────────────────────────────
             [
