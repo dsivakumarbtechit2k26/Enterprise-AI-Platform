@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\AuditLog;
 use App\Models\FieldPermission;
 use App\Models\Role;
 use App\Models\User;
@@ -78,11 +79,25 @@ final class RbacAuditLogger
     public static function roleAssigned(User $user, string $roleName, string $tenantId, User $actor): void
     {
         UserRoleObserver::logRoleAssigned($user, $roleName, $tenantId, $actor);
+
+        AuditLog::record(
+            event:     'role.assigned',
+            newValues: ['role' => $roleName, 'user_id' => $user->id, 'user_email' => $user->email],
+            tenantId:  $tenantId,
+            actorId:   $actor->id,
+        );
     }
 
     public static function roleRevoked(User $user, string $roleName, string $tenantId, User $actor): void
     {
         UserRoleObserver::logRoleRevoked($user, $roleName, $tenantId, $actor);
+
+        AuditLog::record(
+            event:     'role.revoked',
+            oldValues: ['role' => $roleName, 'user_id' => $user->id, 'user_email' => $user->email],
+            tenantId:  $tenantId,
+            actorId:   $actor->id,
+        );
     }
 
     // ── Permission events ─────────────────────────────────────────────────────
@@ -90,11 +105,25 @@ final class RbacAuditLogger
     public static function permissionsGranted(User $user, array $permissions, string $tenantId, User $actor): void
     {
         UserRoleObserver::logPermissionGranted($user, $permissions, $tenantId, $actor);
+
+        AuditLog::record(
+            event:     'permission.granted',
+            newValues: ['permissions' => $permissions, 'user_id' => $user->id, 'user_email' => $user->email],
+            tenantId:  $tenantId,
+            actorId:   $actor->id,
+        );
     }
 
     public static function permissionsRevoked(User $user, array $permissions, string $tenantId, User $actor): void
     {
         UserRoleObserver::logPermissionRevoked($user, $permissions, $tenantId, $actor);
+
+        AuditLog::record(
+            event:     'permission.revoked',
+            oldValues: ['permissions' => $permissions, 'user_id' => $user->id, 'user_email' => $user->email],
+            tenantId:  $tenantId,
+            actorId:   $actor->id,
+        );
     }
 
     // ── Field permission events ───────────────────────────────────────────────

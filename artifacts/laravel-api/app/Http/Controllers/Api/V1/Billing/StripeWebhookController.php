@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1\Billing;
 
 use App\Jobs\SendDunningEmailJob;
+use App\Models\AuditLog;
 use App\Models\Tenant;
 use App\Services\BillingService;
 use Illuminate\Support\Carbon;
@@ -47,6 +48,12 @@ class StripeWebhookController extends WebhookController
             $this->billing->bustPlanCache($tenant->id);
         }
 
+        AuditLog::record(
+            event:     'billing.checkout.completed',
+            newValues: ['plan' => $planKey, 'stripe_session' => $session['id'] ?? null],
+            tenantId:  $tenant->id,
+        );
+
         Log::info('Stripe: checkout.session.completed', [
             'tenant_id' => $tenant->id,
             'plan'      => $planKey,
@@ -86,6 +93,12 @@ class StripeWebhookController extends WebhookController
             $this->billing->bustPlanCache($tenant->id);
         }
 
+        AuditLog::record(
+            event:     'billing.subscription.created',
+            newValues: ['plan' => $planKey, 'stripe_subscription' => $sub['id'] ?? null],
+            tenantId:  $tenant->id,
+        );
+
         Log::info('Stripe: customer.subscription.created', [
             'tenant_id' => $tenant->id,
             'plan'      => $planKey,
@@ -105,6 +118,13 @@ class StripeWebhookController extends WebhookController
         if ($tenant) {
             $tenant->update(['status' => 'active']);
             $this->billing->bustPlanCache($tenant->id);
+
+            AuditLog::record(
+                event:     'billing.invoice.paid',
+                newValues: ['stripe_invoice' => $invoice['id'] ?? null, 'amount' => $invoice['amount_paid'] ?? null],
+                tenantId:  $tenant->id,
+            );
+
             Log::info('Stripe: invoice.paid', ['tenant_id' => $tenant->id]);
         }
 
@@ -138,6 +158,16 @@ class StripeWebhookController extends WebhookController
             dispatch(new SendDunningEmailJob($tenant->id, 2))->delay(now()->addDays(3)); // day 3
             dispatch(new SendDunningEmailJob($tenant->id, 3))->delay(now()->addDays(7)); // day 7
         }
+
+        AuditLog::record(
+            event:     'billing.invoice.payment_failed',
+            newValues: [
+                'stripe_invoice' => $invoice['id'] ?? null,
+                'attempt_count'  => $attemptCount,
+                'dunning_queued' => $attemptCount === 1,
+            ],
+            tenantId:  $tenant->id,
+        );
 
         Log::warning('Stripe: invoice.payment_failed', [
             'tenant_id' => $tenant->id,
@@ -177,6 +207,12 @@ class StripeWebhookController extends WebhookController
             $tenant->update(['subscription_ends_at' => $periodEnd]);
             $this->billing->bustPlanCache($tenant->id);
 
+            AuditLog::record(
+                event:     'billing.subscription.cancellation_scheduled',
+                newValues: ['ends_at' => $periodEnd?->toIso8601String(), 'stripe_subscription' => $sub['id'] ?? null],
+                tenantId:  $tenant->id,
+            );
+
             Log::info('Stripe: subscription set to cancel at period end', [
                 'tenant_id' => $tenant->id,
                 'ends_at'   => $periodEnd?->toIso8601String(),
@@ -196,6 +232,12 @@ class StripeWebhookController extends WebhookController
             ]);
             $this->billing->bustPlanCache($tenant->id);
         }
+
+        AuditLog::record(
+            event:     'billing.subscription.updated',
+            newValues: ['plan' => $planKey, 'stripe_subscription' => $sub['id'] ?? null],
+            tenantId:  $tenant->id,
+        );
 
         Log::info('Stripe: customer.subscription.updated', [
             'tenant_id' => $tenant->id,
@@ -234,6 +276,12 @@ class StripeWebhookController extends WebhookController
             // Immediately-cancelled subscription with remaining paid time (grace period)
             $tenant->update(['subscription_ends_at' => $periodEnd]);
 
+            AuditLog::record(
+                event:     'billing.subscription.cancelled',
+                newValues: ['grace_period_ends' => $periodEnd->toIso8601String(), 'stripe_subscription' => $sub['id'] ?? null],
+                tenantId:  $tenant->id,
+            );
+
             Log::info('Stripe: subscription deleted with remaining grace period', [
                 'tenant_id'  => $tenant->id,
                 'grace_ends' => $periodEnd->toIso8601String(),
@@ -244,6 +292,12 @@ class StripeWebhookController extends WebhookController
                 'plan'                 => 'free',
                 'subscription_ends_at' => $periodEnd ?? now(),
             ]);
+
+            AuditLog::record(
+                event:     'billing.subscription.expired',
+                newValues: ['plan' => 'free', 'stripe_subscription' => $sub['id'] ?? null],
+                tenantId:  $tenant->id,
+            );
 
             Log::info('Stripe: customer.subscription.deleted — downgraded to free', [
                 'tenant_id' => $tenant->id,
@@ -278,6 +332,17 @@ class StripeWebhookController extends WebhookController
         }
 
         $lastError = $intent['last_payment_error'] ?? [];
+
+        AuditLog::record(
+            event:     'billing.payment_intent.failed',
+            newValues: [
+                'payment_intent' => $intent['id'] ?? null,
+                'error_code'     => $lastError['code'] ?? null,
+                'amount'         => $intent['amount'] ?? null,
+                'currency'       => $intent['currency'] ?? null,
+            ],
+            tenantId:  $tenant->id,
+        );
 
         Log::warning('Stripe: payment_intent.payment_failed', [
             'tenant_id'       => $tenant->id,

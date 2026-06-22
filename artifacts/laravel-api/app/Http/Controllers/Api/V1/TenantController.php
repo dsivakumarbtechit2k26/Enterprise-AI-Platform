@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Tenant;
 use Database\Seeders\TenantRbacSeeder;
 use Illuminate\Http\JsonResponse;
@@ -47,6 +48,18 @@ class TenantController extends Controller
 
             return $tenant;
         });
+
+        AuditLog::record(
+            event:     'tenant.provisioned',
+            newValues: [
+                'name'   => $tenant->name,
+                'plan'   => $tenant->plan,
+                'status' => $tenant->status,
+            ],
+            tenantId:  $tenant->id,
+            actorId:   $request->user()?->id,
+            ipAddress: $request->ip(),
+        );
 
         return response()->json([
             'data' => [

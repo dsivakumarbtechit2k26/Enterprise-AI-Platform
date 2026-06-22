@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1\Billing;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Services\BillingService;
@@ -63,6 +64,14 @@ class BillingController extends Controller
                 $plan->key,
                 $validated['success_url'],
                 $validated['cancel_url'],
+            );
+
+            AuditLog::record(
+                event:     'billing.checkout.started',
+                newValues: ['plan_key' => $plan->key, 'price_id' => $validated['price_id']],
+                tenantId:  $tenant->id,
+                actorId:   $request->user()?->id,
+                ipAddress: $request->ip(),
             );
 
             return response()->json(['url' => $url]);

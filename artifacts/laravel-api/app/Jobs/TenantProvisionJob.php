@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Jobs;
 
+use App\Models\AuditLog;
 use App\Models\Tenant;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -53,6 +54,12 @@ class TenantProvisionJob implements ShouldQueue
 
         // 3. Activate tenant
         $tenant->update(['status' => 'active']);
+
+        AuditLog::record(
+            event:     'tenant.provisioned',
+            newValues: ['name' => $tenant->name, 'plan' => 'free', 'status' => 'active'],
+            tenantId:  $this->tenantId,
+        );
 
         Log::info('TenantProvisionJob: tenant provisioned successfully', [
             'tenant_id' => $this->tenantId,
