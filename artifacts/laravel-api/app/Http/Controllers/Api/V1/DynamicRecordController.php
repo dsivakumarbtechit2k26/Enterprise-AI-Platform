@@ -44,16 +44,19 @@ class DynamicRecordController extends Controller
             abort(401, 'Unauthenticated.');
         }
 
-        $tenantId = $this->tenantId();
-
-        // Platform-admin or central scope — no tenant subscription check needed
-        if (empty($tenantId) || $tenantId === 'central') {
+        // Privileged roles bypass all module-level ACL unconditionally —
+        // this must come BEFORE the tenantId check so super/platform admins
+        // can operate in the central scope without being denied.
+        if ($user->hasRole(['super-admin', 'platform-admin'])) {
             return;
         }
 
-        // Roles that bypass module-level ACL
-        if ($user->hasRole(['super-admin', 'platform-admin'])) {
-            return;
+        $tenantId = $this->tenantId();
+
+        // Non-privileged users with no real tenant context are denied.
+        // Central scope is only for admin tooling, not tenant module access.
+        if (empty($tenantId) || $tenantId === 'central') {
+            abort(403, 'Module access requires an active tenant context.');
         }
 
         // Standard Spatie permission check (tenant-scoped permissions loaded

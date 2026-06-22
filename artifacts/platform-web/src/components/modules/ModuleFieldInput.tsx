@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { AlertCircle } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
@@ -11,8 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { fetchRecords, type ModuleField } from "@/lib/moduleApi";
-import { useAuthStore } from "@/stores/authStore";
+import { fetchTeamMembers, fetchRecords, type ModuleField } from "@/lib/moduleApi";
 
 interface Props {
   field: ModuleField;
@@ -21,33 +21,38 @@ interface Props {
   disabled?: boolean;
 }
 
-// ── Users fetcher (for user_picker) ───────────────────────────────────────────
+// ── Shared error banner ───────────────────────────────────────────────────────
 
-async function fetchUserList(): Promise<{ data: { id: number; name: string; email: string }[] }> {
-  const { token, activeTenantId } = useAuthStore.getState();
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token ?? ""}`,
-    Accept: "application/json",
-  };
-  if (activeTenantId) headers["X-Tenant-ID"] = activeTenantId;
-  const res = await fetch("/api/v1/admin/users", { headers });
-  if (!res.ok) return { data: [] };
-  return res.json();
+function PickerError({ message }: { message: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+      {message}
+    </div>
+  );
 }
 
 // ── User picker sub-component ─────────────────────────────────────────────────
+// Fetches tenant-scoped members (GET /api/v1/team/members) — no admin access
+// required. On error, shows an explicit error banner instead of a silent empty
+// list so users know there's a problem rather than assuming no choices exist.
 
 function UserPickerInput({
   field, value, onChange, disabled,
 }: { field: ModuleField; value: unknown; onChange: (v: unknown) => void; disabled?: boolean }) {
-  const { data, isLoading } = useQuery({
-    queryKey: ["users-for-picker"],
-    queryFn:  fetchUserList,
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["team-members-for-picker"],
+    queryFn:  fetchTeamMembers,
     staleTime: 60_000,
+    retry: 1,
   });
   const users = data?.data ?? [];
 
   if (isLoading) return <Skeleton className="h-10 w-full" />;
+  if (isError) {
+    const msg = error instanceof Error ? error.message : "Failed to load team members.";
+    return <PickerError message={msg} />;
+  }
 
   return (
     <Select
@@ -65,7 +70,7 @@ function UserPickerInput({
           </SelectItem>
         ))}
         {users.length === 0 && (
-          <div className="py-2 px-2 text-xs text-muted-foreground">No users found.</div>
+          <div className="py-2 px-2 text-xs text-muted-foreground">No team members found.</div>
         )}
       </SelectContent>
     </Select>
@@ -82,11 +87,12 @@ function RelationPickerInput({
 }: { field: ModuleField; value: unknown; onChange: (v: unknown) => void; disabled?: boolean }) {
   const slug = field.options?.module_slug ?? "";
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: ["relation-records", slug],
     queryFn:  () => fetchRecords(slug, { per_page: 100 }),
     staleTime: 60_000,
     enabled:  !!slug,
+    retry: 1,
   });
 
   const records      = data?.data ?? [];
@@ -111,6 +117,10 @@ function RelationPickerInput({
   }
 
   if (isLoading) return <Skeleton className="h-10 w-full" />;
+  if (isError) {
+    const msg = error instanceof Error ? error.message : `Failed to load ${slug} records.`;
+    return <PickerError message={msg} />;
+  }
 
   return (
     <Select

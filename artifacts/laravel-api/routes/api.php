@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\Rbac\PermissionController;
 use App\Http\Controllers\Api\V1\Rbac\RoleController;
 use App\Http\Controllers\Api\V1\TenantController;
 use App\Http\Controllers\Api\V1\Tenant\TenantSettingsController;
+use App\Http\Controllers\Api\V1\Tenant\TeamMembersController;
 use App\Http\Controllers\Api\V1\Admin\AdminStatsController;
 use App\Http\Controllers\Api\V1\Admin\AdminTenantsController;
 use App\Http\Controllers\Api\V1\Admin\AdminUsersController;
@@ -113,6 +114,12 @@ Route::prefix('v1')->group(function () {
         Route::post('/auth/email/verify-resend', [AuthController::class, 'resendVerification'])
             ->middleware('throttle:3,1')
             ->name('api.v1.auth.email.verify_resend');
+
+        // Team members — returns users belonging to the active tenant.
+        // Used by dynamic form user_picker fields; no special permission
+        // required beyond being an authenticated member of the tenant.
+        Route::get('/team/members', [TeamMembersController::class, 'index'])
+            ->name('api.v1.team.members.index');
 
         // Tenant profile / onboarding settings (restricted to admins / settings managers)
         Route::patch('/tenant/profile', [TenantSettingsController::class, 'update'])

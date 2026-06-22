@@ -120,6 +120,23 @@ async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+// ── Team Members API ──────────────────────────────────────────────────────────
+
+export interface TeamMember {
+  id: number;
+  name: string;
+  email: string;
+}
+
+/**
+ * Returns users who belong to the active tenant (X-Tenant-ID scoped).
+ * Used by user_picker form fields. Throws ModuleApiError on failure so
+ * callers can show explicit error state rather than silently empty lists.
+ */
+export async function fetchTeamMembers(): Promise<{ data: TeamMember[] }> {
+  return apiFetch("/team/members");
+}
+
 // ── Admin Module API ──────────────────────────────────────────────────────────
 
 export async function fetchAdminModules(): Promise<{ data: DynamicModule[] }> {
