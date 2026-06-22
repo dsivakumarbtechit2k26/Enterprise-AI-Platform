@@ -1,4 +1,5 @@
-import { useState, useCallback } from "react";
+import { useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { List, type RowComponentProps } from "react-window";
 import { adminFetch, type AdminAuditLog, type PaginatedResponse } from "@/lib/adminApi";
@@ -14,20 +15,140 @@ import {
 } from "@/components/ui/dialog";
 import { ChevronLeft, ChevronRight, Download, Eye, Filter, X } from "lucide-react";
 
-// ── Event category definitions ────────────────────────────────────────────────
+// ── Event label map ───────────────────────────────────────────────────────────
 
-const EVENT_CATEGORIES: { label: string; prefix: string }[] = [
-  { label: "Auth",           prefix: "auth"              },
-  { label: "Tenant",         prefix: "tenant"            },
-  { label: "Subscription",   prefix: "subscription"      },
-  { label: "Invoice / Pay",  prefix: "invoice"           },
-  { label: "Billing",        prefix: "billing"           },
-  { label: "User",           prefix: "user"              },
-  { label: "Settings",       prefix: "platform_settings" },
-  { label: "Support",        prefix: "support"           },
+const EVENT_LABELS: Record<string, string> = {
+  // Auth
+  "auth.login.success":       "Login Successful",
+  "auth.login.failed":        "Login Failed",
+  "auth.login.mfa_required":  "MFA Required",
+  "auth.logout":              "Logged Out",
+  "auth.email.verified":      "Email Verified",
+  "auth.password.reset":      "Password Reset",
+  "auth.password.changed":    "Password Changed",
+  "auth.mfa.enabled":         "MFA Enabled",
+  "auth.mfa.disabled":        "MFA Disabled",
+  "auth.token.created":       "API Token Created",
+  "auth.token.revoked":       "API Token Revoked",
+  // User
+  "user.registered":          "User Registered",
+  "user.updated":             "User Updated",
+  "user.deleted":             "User Deleted",
+  "user.impersonated":        "User Impersonated",
+  "user.password.reset":      "Admin Password Reset",
+  // Tenant
+  "tenant.provisioned":       "Tenant Provisioned",
+  "tenant.active":            "Tenant Activated",
+  "tenant.suspended":         "Tenant Suspended",
+  "tenant.expired":           "Tenant Expired",
+  "tenant.plan_changed":      "Plan Changed",
+  "tenant.impersonated":      "Tenant Impersonated",
+  "tenant.deleted":           "Tenant Deleted",
+  // RBAC
+  "role.assigned":            "Role Assigned",
+  "role.revoked":             "Role Revoked",
+  "role.created":             "Role Created",
+  "role.updated":             "Role Updated",
+  "role.deleted":             "Role Deleted",
+  "permission.granted":       "Permission Granted",
+  "permission.revoked":       "Permission Revoked",
+  "field_permission.updated": "Field Permission Updated",
+  // Billing
+  "billing.checkout.started":             "Checkout Started",
+  "billing.checkout.completed":           "Checkout Completed",
+  "billing.subscription.created":         "Subscription Created",
+  "billing.subscription.updated":         "Subscription Updated",
+  "billing.subscription.cancelled":       "Subscription Cancelled",
+  "billing.subscription.expired":         "Subscription Expired",
+  "billing.subscription.resumed":         "Subscription Resumed",
+  "billing.invoice.paid":                 "Invoice Paid",
+  "billing.invoice.payment_failed":       "Invoice Payment Failed",
+  "billing.payment_method.updated":       "Payment Method Updated",
+  // Subscription (alternate prefix)
+  "subscription.created":   "Subscription Created",
+  "subscription.updated":   "Subscription Updated",
+  "subscription.cancelled": "Subscription Cancelled",
+  "subscription.expired":   "Subscription Expired",
+  // Settings
+  "platform_settings.updated":   "Platform Settings Updated",
+  "platform_settings.smtp_test": "SMTP Test Sent",
+  // Support
+  "support.ticket.created": "Support Ticket Created",
+  "support.ticket.closed":  "Support Ticket Closed",
+};
+
+function eventLabel(event: string): string {
+  if (EVENT_LABELS[event]) return EVENT_LABELS[event];
+  // Fallback: convert "some.event.key" → "Some Event Key"
+  return event
+    .split(".")
+    .map((part) => part.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()))
+    .join(" › ");
+}
+
+// ── Category badge config ─────────────────────────────────────────────────────
+
+type Category = "auth" | "tenant" | "billing" | "rbac" | "user" | "settings" | "support" | "other";
+
+const CATEGORY_STYLES: Record<Category, { bg: string; text: string; ring: string; label: string }> = {
+  auth:     { bg: "bg-blue-500/15",   text: "text-blue-300",   ring: "ring-blue-500/30",   label: "Auth"     },
+  tenant:   { bg: "bg-purple-500/15", text: "text-purple-300", ring: "ring-purple-500/30", label: "Tenant"   },
+  billing:  { bg: "bg-emerald-500/15",text: "text-emerald-300",ring: "ring-emerald-500/30",label: "Billing"  },
+  rbac:     { bg: "bg-amber-500/15",  text: "text-amber-300",  ring: "ring-amber-500/30",  label: "RBAC"     },
+  user:     { bg: "bg-sky-500/15",    text: "text-sky-300",    ring: "ring-sky-500/30",    label: "User"     },
+  settings: { bg: "bg-slate-500/15",  text: "text-slate-300",  ring: "ring-slate-500/30",  label: "Settings" },
+  support:  { bg: "bg-rose-500/15",   text: "text-rose-300",   ring: "ring-rose-500/30",   label: "Support"  },
+  other:    { bg: "bg-slate-700/30",  text: "text-slate-400",  ring: "ring-slate-600/30",  label: "Other"    },
+};
+
+const PREFIX_TO_CATEGORY: [string, Category][] = [
+  ["auth",              "auth"],
+  ["tenant",            "tenant"],
+  ["billing",           "billing"],
+  ["subscription",      "billing"],
+  ["invoice",           "billing"],
+  ["role",              "rbac"],
+  ["permission",        "rbac"],
+  ["field_permission",  "rbac"],
+  ["user",              "user"],
+  ["platform_settings", "settings"],
+  ["support",           "support"],
 ];
 
-// ── Row shape passed via rowProps ─────────────────────────────────────────────
+function getCategory(event: string): Category {
+  for (const [prefix, cat] of PREFIX_TO_CATEGORY) {
+    if (event === prefix || event.startsWith(`${prefix}.`)) return cat;
+  }
+  return "other";
+}
+
+function CategoryBadge({ event }: { event: string }) {
+  const cat = getCategory(event);
+  const style = CATEGORY_STYLES[cat];
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset shrink-0 ${style.bg} ${style.text} ${style.ring}`}
+    >
+      {style.label}
+    </span>
+  );
+}
+
+// ── Event category definitions (for sidebar filter) ───────────────────────────
+// Each category maps to ALL of the prefixes that belong to it so that selecting
+// "Billing" or "RBAC" captures every related event, not just a single prefix.
+
+const EVENT_CATEGORIES: { label: string; prefixes: string[]; category: Category }[] = [
+  { label: "Auth",     prefixes: ["auth"],                                          category: "auth"     },
+  { label: "Tenant",   prefixes: ["tenant"],                                        category: "tenant"   },
+  { label: "Billing",  prefixes: ["billing", "subscription", "invoice"],            category: "billing"  },
+  { label: "RBAC",     prefixes: ["role", "permission", "field_permission"],        category: "rbac"     },
+  { label: "User",     prefixes: ["user"],                                          category: "user"     },
+  { label: "Settings", prefixes: ["platform_settings"],                             category: "settings" },
+  { label: "Support",  prefixes: ["support"],                                       category: "support"  },
+];
+
+// ── Row shape ─────────────────────────────────────────────────────────────────
 
 interface AuditRowProps {
   items: AdminAuditLog[];
@@ -51,10 +172,13 @@ function AuditRow({
       <span className="text-slate-500 text-xs tabular-nums whitespace-nowrap w-36 shrink-0">
         {new Date(log.created_at).toLocaleString()}
       </span>
-      <span className="text-white text-xs font-mono truncate flex-1 min-w-0">
-        {log.event}
-      </span>
-      <span className="text-slate-400 text-xs w-32 shrink-0 truncate hidden lg:block">
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        <CategoryBadge event={log.event} />
+        <span className="text-white text-xs truncate" title={log.event}>
+          {eventLabel(log.event)}
+        </span>
+      </div>
+      <span className="text-slate-400 text-xs w-32 shrink-0 truncate hidden lg:block" title={log.tenant_id ?? undefined}>
         {log.tenant_id ?? "—"}
       </span>
       <div className="w-40 shrink-0 hidden md:block">
@@ -84,48 +208,80 @@ function AuditRow({
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AdminAuditLogPage() {
-  const [tenantId,      setTenantId]      = useState("");
-  const [eventText,     setEventText]     = useState("");
-  const [eventPrefixes, setEventPrefixes] = useState<Set<string>>(new Set());
-  const [actorEmail,    setActorEmail]    = useState("");
-  const [from,          setFrom]          = useState("");
-  const [to,            setTo]            = useState("");
-  const [page,          setPage]          = useState(1);
-  const [detail,        setDetail]        = useState<AdminAuditLog | null>(null);
-  const [sidebarOpen,   setSidebarOpen]   = useState(true);
-
+  const [searchParams, setSearchParams] = useSearchParams();
   const token = useAuthStore((s) => s.token);
 
-  const togglePrefix = useCallback((prefix: string) => {
-    setEventPrefixes((prev) => {
-      const next = new Set(prev);
-      next.has(prefix) ? next.delete(prefix) : next.add(prefix);
-      return next;
+  // Read filter state from URL
+  // Categories are stored by name (e.g. "billing,rbac"); prefixes are derived at query time.
+  const tenantId       = searchParams.get("tenant_id")   ?? "";
+  const eventText      = searchParams.get("event")       ?? "";
+  const actorEmail     = searchParams.get("actor_email") ?? "";
+  const from           = searchParams.get("from")        ?? "";
+  const to             = searchParams.get("to")          ?? "";
+  const page           = Number(searchParams.get("page") ?? "1");
+  const sidebarOpen    = searchParams.get("sidebar") !== "0";
+  const selectedCategories = useMemo(() => {
+    const raw = searchParams.get("categories");
+    return raw ? new Set<Category>(raw.split(",").filter(Boolean) as Category[]) : new Set<Category>();
+  }, [searchParams]);
+
+  // Expand selected categories → flat list of prefixes sent to the API
+  const expandedPrefixes = useMemo(() => {
+    const out: string[] = [];
+    for (const cat of selectedCategories) {
+      const def = EVENT_CATEGORIES.find((c) => c.category === cat);
+      if (def) out.push(...def.prefixes);
+    }
+    return out;
+  }, [selectedCategories]);
+
+  // Helper to patch one or more params without clobbering others
+  const setParam = useCallback(
+    (updates: Record<string, string | null>) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        for (const [k, v] of Object.entries(updates)) {
+          if (v === null || v === "") next.delete(k);
+          else next.set(k, v);
+        }
+        return next;
+      }, { replace: true });
+    },
+    [setSearchParams],
+  );
+
+  const toggleCategory = useCallback((cat: Category) => {
+    setParam({
+      categories: (() => {
+        const next = new Set(selectedCategories);
+        next.has(cat) ? next.delete(cat) : next.add(cat);
+        return next.size > 0 ? [...next].join(",") : null;
+      })(),
+      page: null,
     });
-    setPage(1);
-  }, []);
+  }, [selectedCategories, setParam]);
 
   const activeFilterCount =
-    (tenantId              ? 1 : 0) +
-    (eventText             ? 1 : 0) +
-    (eventPrefixes.size > 0 ? 1 : 0) +
-    (actorEmail            ? 1 : 0) +
-    (from                  ? 1 : 0) +
-    (to                    ? 1 : 0);
+    (tenantId                   ? 1 : 0) +
+    (eventText                  ? 1 : 0) +
+    (selectedCategories.size > 0 ? 1 : 0) +
+    (actorEmail                 ? 1 : 0) +
+    (from                       ? 1 : 0) +
+    (to                         ? 1 : 0);
 
   const params = new URLSearchParams({
     page:     String(page),
     per_page: "100",
-    ...(tenantId                  ? { tenant_id:     tenantId }                       : {}),
-    ...(eventText                 ? { event:         eventText }                      : {}),
-    ...(eventPrefixes.size > 0    ? { event_prefixes: [...eventPrefixes].join(",") } : {}),
-    ...(actorEmail                ? { actor_email:   actorEmail }                     : {}),
-    ...(from                      ? { from }                                           : {}),
-    ...(to                        ? { to }                                             : {}),
+    ...(tenantId                    ? { tenant_id:      tenantId }                       : {}),
+    ...(eventText                   ? { event:          eventText }                      : {}),
+    ...(expandedPrefixes.length > 0 ? { event_prefixes: expandedPrefixes.join(",") }     : {}),
+    ...(actorEmail                  ? { actor_email:    actorEmail }                     : {}),
+    ...(from                        ? { from }                                            : {}),
+    ...(to                          ? { to }                                              : {}),
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin", "audit-logs", tenantId, eventText, [...eventPrefixes].join(","), actorEmail, from, to, page],
+    queryKey: ["admin", "audit-logs", tenantId, eventText, expandedPrefixes.join(","), actorEmail, from, to, page],
     queryFn:  () => adminFetch<PaginatedResponse<AdminAuditLog>>(`/audit-logs?${params}`),
     placeholderData: (prev) => prev,
   });
@@ -149,9 +305,12 @@ export default function AdminAuditLogPage() {
   };
 
   const handleReset = () => {
-    setTenantId(""); setEventText(""); setEventPrefixes(new Set());
-    setActorEmail(""); setFrom(""); setTo(""); setPage(1);
+    setSearchParams({ sidebar: sidebarOpen ? "1" : "0" }, { replace: true });
   };
+
+  // Open detail dialog via URL param
+  const detailId = searchParams.get("detail");
+  const detail   = detailId ? (data?.data ?? []).find((l) => String(l.id) === detailId) ?? null : null;
 
   const rows       = data?.data ?? [];
   const listHeight = Math.min(600, Math.max(200, rows.length * 56 + 1));
@@ -169,7 +328,7 @@ export default function AdminAuditLogPage() {
             variant="outline"
             size="sm"
             className="border-white/10 text-slate-300 hover:bg-white/10"
-            onClick={() => setSidebarOpen((o) => !o)}
+            onClick={() => setParam({ sidebar: sidebarOpen ? "0" : "1" })}
           >
             <Filter className="w-3.5 h-3.5 mr-1.5" />
             Filters
@@ -207,45 +366,20 @@ export default function AdminAuditLogPage() {
               )}
             </div>
 
-            {/* Tenant ID */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider block">
-                Tenant ID
-              </label>
-              <Input
-                value={tenantId}
-                onChange={(e) => { setTenantId(e.target.value); setPage(1); }}
-                placeholder="Filter by tenant…"
-                className="bg-slate-800 border-white/10 text-white placeholder:text-slate-500 text-sm h-8"
-              />
-            </div>
-
-            {/* Event text search */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider block">
-                Event (text match)
-              </label>
-              <Input
-                value={eventText}
-                onChange={(e) => { setEventText(e.target.value); setPage(1); }}
-                placeholder="e.g. tenant.suspended"
-                className="bg-slate-800 border-white/10 text-white placeholder:text-slate-500 text-sm h-8"
-              />
-            </div>
-
-            {/* Event category multi-select */}
+            {/* Event Categories multi-select */}
             <div className="space-y-2">
               <label className="text-xs font-medium text-slate-400 uppercase tracking-wider block">
-                Event Categories
+                Event Category
               </label>
               <div className="space-y-1">
-                {EVENT_CATEGORIES.map(({ label, prefix }) => {
-                  const checked = eventPrefixes.has(prefix);
+                {EVENT_CATEGORIES.map(({ label, category }) => {
+                  const checked = selectedCategories.has(category);
+                  const style   = CATEGORY_STYLES[category];
                   return (
                     <label
-                      key={prefix}
+                      key={category}
                       className="flex items-center gap-2.5 cursor-pointer group py-0.5"
-                      onClick={() => togglePrefix(prefix)}
+                      onClick={() => toggleCategory(category)}
                     >
                       <div
                         className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors ${
@@ -260,6 +394,9 @@ export default function AdminAuditLogPage() {
                           </svg>
                         )}
                       </div>
+                      <span className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ${style.bg} ${style.text} ${style.ring}`}>
+                        {style.label}
+                      </span>
                       <span className="text-sm text-slate-300 group-hover:text-white transition-colors">
                         {label}
                       </span>
@@ -269,6 +406,32 @@ export default function AdminAuditLogPage() {
               </div>
             </div>
 
+            {/* Tenant ID */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider block">
+                Tenant
+              </label>
+              <Input
+                value={tenantId}
+                onChange={(e) => setParam({ tenant_id: e.target.value, page: null })}
+                placeholder="Filter by tenant ID…"
+                className="bg-slate-800 border-white/10 text-white placeholder:text-slate-500 text-sm h-8"
+              />
+            </div>
+
+            {/* Event text search */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-slate-400 uppercase tracking-wider block">
+                Event Key
+              </label>
+              <Input
+                value={eventText}
+                onChange={(e) => setParam({ event: e.target.value, page: null })}
+                placeholder="e.g. tenant.suspended"
+                className="bg-slate-800 border-white/10 text-white placeholder:text-slate-500 text-sm h-8"
+              />
+            </div>
+
             {/* Actor email */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-slate-400 uppercase tracking-wider block">
@@ -276,7 +439,7 @@ export default function AdminAuditLogPage() {
               </label>
               <Input
                 value={actorEmail}
-                onChange={(e) => { setActorEmail(e.target.value); setPage(1); }}
+                onChange={(e) => setParam({ actor_email: e.target.value, page: null })}
                 placeholder="Filter by actor…"
                 className="bg-slate-800 border-white/10 text-white placeholder:text-slate-500 text-sm h-8"
               />
@@ -291,14 +454,14 @@ export default function AdminAuditLogPage() {
                 <Input
                   type="date"
                   value={from}
-                  onChange={(e) => { setFrom(e.target.value); setPage(1); }}
+                  onChange={(e) => setParam({ from: e.target.value, page: null })}
                   className="bg-slate-800 border-white/10 text-white text-sm h-8"
                   title="From"
                 />
                 <Input
                   type="date"
                   value={to}
-                  onChange={(e) => { setTo(e.target.value); setPage(1); }}
+                  onChange={(e) => setParam({ to: e.target.value, page: null })}
                   className="bg-slate-800 border-white/10 text-white text-sm h-8"
                   title="To"
                 />
@@ -309,6 +472,51 @@ export default function AdminAuditLogPage() {
 
         {/* ── Virtualized table ───────────────────────────────────────── */}
         <div className="flex-1 min-w-0 space-y-3">
+          {/* Active filter chips */}
+          {activeFilterCount > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {[...selectedCategories].map((cat) => {
+                const def   = EVENT_CATEGORIES.find((c) => c.category === cat);
+                const style = CATEGORY_STYLES[cat];
+                return (
+                  <span
+                    key={cat}
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ring-1 ring-inset ${style.bg} ${style.text} ${style.ring}`}
+                  >
+                    {def?.label ?? cat}
+                    <button type="button" onClick={() => toggleCategory(cat)} className="hover:opacity-70">
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </span>
+                );
+              })}
+              {tenantId && (
+                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ring-1 ring-inset bg-slate-700/40 text-slate-300 ring-slate-600/30">
+                  Tenant: {tenantId}
+                  <button type="button" onClick={() => setParam({ tenant_id: null })} className="hover:opacity-70"><X className="w-2.5 h-2.5" /></button>
+                </span>
+              )}
+              {actorEmail && (
+                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ring-1 ring-inset bg-slate-700/40 text-slate-300 ring-slate-600/30">
+                  Actor: {actorEmail}
+                  <button type="button" onClick={() => setParam({ actor_email: null })} className="hover:opacity-70"><X className="w-2.5 h-2.5" /></button>
+                </span>
+              )}
+              {eventText && (
+                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ring-1 ring-inset bg-slate-700/40 text-slate-300 ring-slate-600/30">
+                  Event: {eventText}
+                  <button type="button" onClick={() => setParam({ event: null })} className="hover:opacity-70"><X className="w-2.5 h-2.5" /></button>
+                </span>
+              )}
+              {(from || to) && (
+                <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ring-1 ring-inset bg-slate-700/40 text-slate-300 ring-slate-600/30">
+                  {from && to ? `${from} → ${to}` : from ? `From ${from}` : `Until ${to}`}
+                  <button type="button" onClick={() => setParam({ from: null, to: null })} className="hover:opacity-70"><X className="w-2.5 h-2.5" /></button>
+                </span>
+              )}
+            </div>
+          )}
+
           <div className="rounded-lg border border-white/10 bg-slate-900/50 overflow-hidden">
             {/* Header row */}
             <div className="flex items-center gap-3 px-4 py-2.5 border-b border-white/10 bg-white/5">
@@ -340,7 +548,7 @@ export default function AdminAuditLogPage() {
                 rowComponent={AuditRow}
                 rowCount={rows.length}
                 rowHeight={56}
-                rowProps={{ items: rows, onDetail: setDetail }}
+                rowProps={{ items: rows, onDetail: (log) => setParam({ detail: String(log.id) }) }}
                 style={{ height: listHeight }}
               />
             )}
@@ -356,7 +564,7 @@ export default function AdminAuditLogPage() {
                   size="sm"
                   className="border-white/10 text-slate-300 hover:bg-white/10"
                   disabled={page === 1}
-                  onClick={() => setPage((p) => p - 1)}
+                  onClick={() => setParam({ page: String(page - 1) })}
                 >
                   <ChevronLeft className="w-4 h-4 mr-1" /> Prev
                 </Button>
@@ -365,7 +573,7 @@ export default function AdminAuditLogPage() {
                   size="sm"
                   className="border-white/10 text-slate-300 hover:bg-white/10"
                   disabled={page === data.meta.last_page}
-                  onClick={() => setPage((p) => p + 1)}
+                  onClick={() => setParam({ page: String(page + 1) })}
                 >
                   Next <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>
@@ -376,10 +584,18 @@ export default function AdminAuditLogPage() {
       </div>
 
       {/* Detail dialog */}
-      <Dialog open={!!detail} onOpenChange={(o) => !o && setDetail(null)}>
+      <Dialog open={!!detail} onOpenChange={(o) => !o && setParam({ detail: null })}>
         <DialogContent className="bg-slate-900 border-white/10 max-w-lg">
           <DialogHeader>
-            <DialogTitle className="text-white font-mono text-sm">{detail?.event}</DialogTitle>
+            <div className="flex items-center gap-2.5">
+              {detail && <CategoryBadge event={detail.event} />}
+              <DialogTitle className="text-white text-sm">
+                {detail ? eventLabel(detail.event) : ""}
+              </DialogTitle>
+            </div>
+            {detail && (
+              <p className="text-slate-500 text-xs font-mono mt-0.5">{detail.event}</p>
+            )}
           </DialogHeader>
           {detail && (
             <div className="space-y-4 text-sm">
