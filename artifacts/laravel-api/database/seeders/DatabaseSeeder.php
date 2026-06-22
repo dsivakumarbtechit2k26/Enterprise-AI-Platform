@@ -10,6 +10,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             PlatformSeeder::class,
+            PlatformSettingsSeeder::class,
             RbacSeeder::class,
             PlatformAdminSeeder::class,
         ]);

@@ -85,19 +85,19 @@ class AdminSettingsController extends Controller
 
         // Load current SMTP settings from platform_settings table (fall back to .env)
         $s = PlatformSetting::whereIn('key', [
-            'smtp_host', 'smtp_port', 'smtp_username', 'smtp_password', 'smtp_encryption',
-            'mail_from_address', 'mail_from_name',
+            'smtp.host', 'smtp.port', 'smtp.username', 'smtp.password', 'smtp.encryption',
+            'mail.from_address', 'mail.from_name',
         ])->pluck('value', 'key');
 
         config([
             'mail.default'                     => 'smtp',
-            'mail.mailers.smtp.host'            => $s->get('smtp_host',        config('mail.mailers.smtp.host')),
-            'mail.mailers.smtp.port'            => (int) ($s->get('smtp_port', config('mail.mailers.smtp.port', 587))),
-            'mail.mailers.smtp.username'        => $s->get('smtp_username',    config('mail.mailers.smtp.username')),
-            'mail.mailers.smtp.password'        => $s->get('smtp_password',    config('mail.mailers.smtp.password')),
-            'mail.mailers.smtp.encryption'      => $s->get('smtp_encryption',  config('mail.mailers.smtp.encryption', 'tls')),
-            'mail.from.address'                 => $s->get('mail_from_address', config('mail.from.address', 'noreply@example.com')),
-            'mail.from.name'                    => $s->get('mail_from_name',    config('mail.from.name', 'Platform')),
+            'mail.mailers.smtp.host'            => $s->get('smtp.host',        config('mail.mailers.smtp.host')),
+            'mail.mailers.smtp.port'            => (int) ($s->get('smtp.port', config('mail.mailers.smtp.port', 587))),
+            'mail.mailers.smtp.username'        => $s->get('smtp.username',    config('mail.mailers.smtp.username')),
+            'mail.mailers.smtp.password'        => $s->get('smtp.password',    config('mail.mailers.smtp.password')),
+            'mail.mailers.smtp.encryption'      => $s->get('smtp.encryption',  config('mail.mailers.smtp.encryption', 'tls')),
+            'mail.from.address'                 => $s->get('mail.from_address', config('mail.from.address', 'noreply@example.com')),
+            'mail.from.name'                    => $s->get('mail.from_name',    config('mail.from.name', 'Platform')),
         ]);
 
         // Force a fresh mailer instance so it picks up the runtime config change
