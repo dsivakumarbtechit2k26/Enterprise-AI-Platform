@@ -164,6 +164,40 @@ class PlatformSettingsSeeder extends Seeder
                 'is_public'   => false,
             ],
 
+            // ── Security Alerts ───────────────────────────────────────────────
+            [
+                'key'         => 'security.admin_alert_email',
+                'value'       => '',
+                'type'        => 'string',
+                'group'       => 'security',
+                'description' => 'Email address that receives security alert notifications. Leave blank to use the platform from-address.',
+                'is_public'   => false,
+            ],
+            [
+                'key'         => 'security.login_failure_threshold',
+                'value'       => '3',
+                'type'        => 'integer',
+                'group'       => 'security',
+                'description' => 'Number of consecutive failed login attempts that triggers an admin alert (0 = disabled).',
+                'is_public'   => false,
+            ],
+            [
+                'key'         => 'security.alert_on_account_lock',
+                'value'       => '1',
+                'type'        => 'boolean',
+                'group'       => 'security',
+                'description' => 'Send an admin alert whenever an account is automatically locked due to too many failed logins.',
+                'is_public'   => false,
+            ],
+            [
+                'key'         => 'security.alert_on_payment_failure',
+                'value'       => '0',
+                'type'        => 'boolean',
+                'group'       => 'security',
+                'description' => 'Send an admin alert whenever a payment failure (invoice.payment_failed) is detected.',
+                'is_public'   => false,
+            ],
+
             // ── Features ──────────────────────────────────────────────────────
             [
                 'key'         => 'feature.ai_enabled',

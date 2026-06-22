@@ -8,6 +8,7 @@ use App\Jobs\SendDunningEmailJob;
 use App\Models\AuditLog;
 use App\Models\Tenant;
 use App\Services\BillingService;
+use App\Services\SecurityAlertService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Laravel\Cashier\Http\Controllers\WebhookController;
@@ -15,8 +16,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class StripeWebhookController extends WebhookController
 {
-    public function __construct(private readonly BillingService $billing)
-    {
+    public function __construct(
+        private readonly BillingService       $billing,
+        private readonly SecurityAlertService $securityAlert,
+    ) {
         parent::__construct(); // Registers VerifyWebhookSignature when STRIPE_WEBHOOK_SECRET is set
     }
 
@@ -158,6 +161,8 @@ class StripeWebhookController extends WebhookController
             dispatch(new SendDunningEmailJob($tenant->id, 2))->delay(now()->addDays(3)); // day 3
             dispatch(new SendDunningEmailJob($tenant->id, 3))->delay(now()->addDays(7)); // day 7
         }
+
+        $this->securityAlert->alertPaymentFailed($tenant, $invoice['id'] ?? '', $attemptCount);
 
         AuditLog::record(
             event:     'billing.invoice.payment_failed',

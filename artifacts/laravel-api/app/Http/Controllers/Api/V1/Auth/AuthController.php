@@ -8,6 +8,7 @@ use App\Http\Controllers\Controller;
 use App\Models\MfaPendingSession;
 use App\Models\User;
 use App\Services\AuditService;
+use App\Services\SecurityAlertService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -17,7 +18,10 @@ use Symfony\Component\HttpFoundation\Response;
 
 class AuthController extends Controller
 {
-    public function __construct(private readonly AuditService $audit) {}
+    public function __construct(
+        private readonly AuditService         $audit,
+        private readonly SecurityAlertService $securityAlert,
+    ) {}
 
     // ── POST /api/v1/auth/register ────────────────────────────────────────────
 
@@ -71,7 +75,7 @@ class AuthController extends Controller
             return $this->invalidCredentialsResponse();
         }
 
-        // Locked account
+        // Locked account (already locked from a prior attempt — no new alert)
         if ($user->isLocked()) {
             $this->audit->logAuth('auth.login.locked', $user->id, $request);
             return response()->json([
@@ -87,6 +91,19 @@ class AuthController extends Controller
         if (! Hash::check($validated['password'], $user->password)) {
             $user->incrementFailedLogin();
             $this->audit->logAuth('auth.login.failed', $user->id, $request, ['reason' => 'invalid_password']);
+
+            // Determine which alert to send after the count is updated.
+            // incrementFailedLogin() sets locked_until when count >= 5, so isLocked()
+            // is true here only when this attempt *just* caused the lock transition.
+            // In that case send the lock alert (one per lock period).
+            // Otherwise, send the threshold alert if the count has reached the limit.
+            $ip = $request->ip() ?? 'unknown';
+            if ($user->isLocked()) {
+                $this->securityAlert->alertAccountLocked($user, $ip);
+            } else {
+                $this->securityAlert->checkLoginFailureThreshold($user, $ip);
+            }
+
             return $this->invalidCredentialsResponse();
         }
 
