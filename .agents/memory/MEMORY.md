@@ -1,9 +1,3 @@
-- [Cashier multi-tenant setup](cashier-multi-tenant.md) — polymorphic subscriptions table + custom TenantSubscription model required; must call parent::__construct() in webhook controller
-- [Tenant billable model](tenant-billable.md) — Tenant uses BillableTenant trait (not raw Cashier Billable); subscriptions() returns MorphMany on TenantSubscription with table='subscriptions'
-- [Tenancy purgeTenantConnection driver bug](tenancy-purge-driver-bug.md) — stancl/tenancy v3 purges `config['database.connections.tenant']` before using it; use `pgsql` as template_tenant_connection instead of `tenant`
-- [Laravel Replit env injection](laravel-replit-env-injection.md) — Replit workflow processes don't inherit shell env vars; startup script must inject PGHOST/DATABASE_URL etc. into .env
-- [PostgreSQL schema-based tenancy](pgsql-schema-tenancy.md) — central schema uses `central`, tenant schemas named `tenant_{id}`; central schema must be created with raw SQL before migrations
-- [Laravel API auth patterns](laravel-api-auth-patterns.md) — key patterns for stateless Sanctum token auth: custom Authenticate middleware, ResetPassword URL, session vs cache, table names
-- [RBAC team sentinel](rbac-team-sentinel.md) — PostgreSQL PKs can't be NULL; use string 'central' not null for platform-scope team_id in spatie teams feature
-- [Spatie middleware pattern](spatie-middleware-pattern.md) — ResolveTenantPermissions must set both active_tenant_id request attribute AND registrar team; controllers must NOT call setPermissionsTeamId again or they break it
-- [Spatie activitylog quirks](spatie-activitylog-quirks.md) — trait is Concerns\LogsActivity not Traits\LogsActivity; use dontLogEmptyChanges(); attribute_changes column must be added manually to activity_log
+- [Billing stack](billing-stack.md) — full Cashier billing system already built; needs STRIPE_KEY/SECRET/WEBHOOK_SECRET in .env to activate Stripe flows
+- [Tenant RBAC permission resolution](tenant-rbac.md) — billing endpoints need X-Tenant-ID header + tenant-admin role assigned in Spatie with team_id=tenantId
+- [SubscriptionPlan model](billing-stack.md) — uses `key` column (not `slug`); features stored in plan_features table as feature_key/feature_value rows
