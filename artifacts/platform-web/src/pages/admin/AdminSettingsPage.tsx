@@ -13,7 +13,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Save, AlertTriangle, Mail, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { Save, AlertTriangle, Mail, CheckCircle, XCircle, Loader2, Plus, Eye, EyeOff, Lock } from "lucide-react";
 
 type SettingsData = Record<string, Record<string, AdminSetting>>;
 
@@ -25,15 +25,26 @@ const GROUP_LABELS: Record<string, string> = {
   features: "Feature Flags",
 };
 
+const SETTING_TYPES = ["string", "integer", "boolean", "json"] as const;
+const SETTING_GROUPS = Object.keys(GROUP_LABELS);
+
+// ── SettingInput ──────────────────────────────────────────────────────────────
+
 function SettingInput({
+  keyName,
   value,
   type,
+  isSensitive,
   onChange,
 }: {
+  keyName: string;
   value: unknown;
   type: string;
+  isSensitive: boolean;
   onChange: (v: unknown) => void;
 }) {
+  const [revealed, setRevealed] = useState(false);
+
   if (type === "boolean") {
     return (
       <button
@@ -62,6 +73,30 @@ function SettingInput({
         rows={3}
         className="w-full bg-slate-800 border border-white/10 rounded-md px-3 py-2 text-white text-xs font-mono resize-none focus:outline-none focus:border-white/30"
       />
+    );
+  }
+
+  if (isSensitive) {
+    return (
+      <div className="relative flex items-center max-w-xs">
+        <Lock className="absolute left-2.5 w-3 h-3 text-slate-500 pointer-events-none" />
+        <Input
+          type={revealed ? "text" : "password"}
+          value={value === null ? "" : String(value ?? "")}
+          onChange={(e) => onChange(e.target.value === "" ? null : e.target.value)}
+          placeholder="••••••••"
+          aria-label={`${keyName} (sensitive)`}
+          className="bg-slate-800 border-white/10 text-white text-sm h-8 pl-7 pr-8 max-w-xs font-mono placeholder:text-slate-600"
+        />
+        <button
+          type="button"
+          onClick={() => setRevealed((r) => !r)}
+          className="absolute right-2 text-slate-500 hover:text-slate-300"
+          aria-label={revealed ? "Hide value" : "Show value"}
+        >
+          {revealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+        </button>
+      </div>
     );
   }
 
@@ -136,6 +171,125 @@ function SmtpTestPanel() {
   );
 }
 
+// ── New Setting Dialog ────────────────────────────────────────────────────────
+
+interface NewSettingForm {
+  key: string;
+  value: string;
+  type: string;
+  group: string;
+  description: string;
+}
+
+const EMPTY_NEW: NewSettingForm = { key: "", value: "", type: "string", group: "general", description: "" };
+
+function NewSettingDialog({
+  open,
+  onClose,
+  onSave,
+  isPending,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onSave: (form: NewSettingForm) => void;
+  isPending: boolean;
+}) {
+  const [form, setForm] = useState<NewSettingForm>(EMPTY_NEW);
+  const set = (field: keyof NewSettingForm) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm((prev) => ({ ...prev, [field]: e.target.value }));
+
+  const handleClose = () => {
+    setForm(EMPTY_NEW);
+    onClose();
+  };
+
+  const handleSubmit = () => {
+    if (!form.key.trim() || !form.value.trim()) return;
+    onSave(form);
+    setForm(EMPTY_NEW);
+  };
+
+  const inputClass = "w-full bg-slate-800 border border-white/10 rounded-md px-3 py-1.5 text-white text-sm focus:outline-none focus:border-white/30 placeholder:text-slate-600";
+  const labelClass = "block text-xs font-medium text-slate-400 mb-1";
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
+      <DialogContent className="bg-slate-900 border-white/10">
+        <DialogHeader>
+          <DialogTitle className="text-white">Add New Setting</DialogTitle>
+          <DialogDescription className="text-slate-400">
+            Create a custom platform setting key. Use dot notation for namespacing (e.g.{" "}
+            <code className="text-slate-300">feature.my_flag</code>).
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3 py-2">
+          <div>
+            <label className={labelClass}>Key *</label>
+            <input
+              className={inputClass}
+              value={form.key}
+              onChange={set("key")}
+              placeholder="e.g. feature.beta_mode"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Value *</label>
+            <input
+              className={inputClass}
+              value={form.value}
+              onChange={set("value")}
+              placeholder="Setting value"
+            />
+          </div>
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className={labelClass}>Type</label>
+              <select className={inputClass} value={form.type} onChange={set("type")}>
+                {SETTING_TYPES.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex-1">
+              <label className={labelClass}>Group</label>
+              <select className={inputClass} value={form.group} onChange={set("group")}>
+                {SETTING_GROUPS.map((g) => (
+                  <option key={g} value={g}>{GROUP_LABELS[g] ?? g}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className={labelClass}>Description (optional)</label>
+            <input
+              className={inputClass}
+              value={form.description}
+              onChange={set("description")}
+              placeholder="Brief description of this setting"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" className="text-slate-400" onClick={handleClose} disabled={isPending}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSubmit}
+            disabled={!form.key.trim() || !form.value.trim() || isPending}
+            className="bg-primary hover:bg-primary/90"
+          >
+            {isPending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1.5" />}
+            Add Setting
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function AdminSettingsPage() {
@@ -144,6 +298,7 @@ export default function AdminSettingsPage() {
 
   const [edits, setEdits] = useState<Record<string, unknown>>({});
   const [maintenanceDialogOpen, setMaintenanceDialogOpen] = useState(false);
+  const [newSettingOpen, setNewSettingOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin", "settings"],
@@ -151,10 +306,10 @@ export default function AdminSettingsPage() {
   });
 
   const mutation = useMutation({
-    mutationFn: (settings: Record<string, unknown>) =>
+    mutationFn: (payload: { settings: Record<string, unknown>; meta?: Record<string, unknown> }) =>
       adminFetch("/settings", {
         method: "PATCH",
-        body: JSON.stringify({ settings }),
+        body: JSON.stringify(payload),
       }),
     onSuccess: () => {
       toast({ title: "Settings saved" });
@@ -164,12 +319,48 @@ export default function AdminSettingsPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const addMutation = useMutation({
+    mutationFn: (form: NewSettingForm) =>
+      adminFetch("/settings", {
+        method: "PATCH",
+        body: JSON.stringify({
+          settings: { [form.key]: form.value },
+          meta: {
+            [form.key]: {
+              type: form.type,
+              group: form.group,
+              description: form.description || null,
+            },
+          },
+        }),
+      }),
+    onSuccess: () => {
+      toast({ title: "Setting added" });
+      qc.invalidateQueries({ queryKey: ["admin", "settings"] });
+      setNewSettingOpen(false);
+    },
+    onError: (e: Error) => toast({ title: "Error adding setting", description: e.message, variant: "destructive" }),
+  });
+
   const handleChange = (key: string, value: unknown) => {
     setEdits((prev) => ({ ...prev, [key]: value }));
   };
 
   const getValue = (key: string, setting: AdminSetting) => {
-    return key in edits ? edits[key] : setting.value;
+    if (key in edits) return edits[key];
+    // Sensitive fields: API returns null — don't pre-fill; let input start empty
+    if (setting.is_sensitive) return null;
+    return setting.value;
+  };
+
+  // Build the PATCH payload — omit null values for sensitive fields (unchanged)
+  const buildSavePayload = () => {
+    const settings: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(edits)) {
+      if (v === null) continue; // sensitive field was not changed — skip
+      settings[k] = v;
+    }
+    return { settings };
   };
 
   const maintenanceKey = "maintenance_mode";
@@ -191,34 +382,48 @@ export default function AdminSettingsPage() {
   };
 
   const handleSave = () => {
-    if (Object.keys(edits).length === 0) return;
-    mutation.mutate(edits);
+    const payload = buildSavePayload();
+    if (Object.keys(payload.settings).length === 0) return;
+    mutation.mutate(payload);
   };
 
-  const hasChanges = Object.keys(edits).length > 0;
+  // Count editable (non-null) pending changes
+  const pendingCount = Object.values(edits).filter((v) => v !== null).length;
+  const hasChanges = pendingCount > 0;
 
   const allGroups    = Object.keys(GROUP_LABELS);
   const presentGroups = data ? allGroups.filter((g) => g in data) : [];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-white">Platform Settings</h1>
           <p className="text-slate-400 text-sm mt-1">
             Configure platform-wide settings. Changes take effect immediately.
           </p>
         </div>
-        <Button
-          onClick={handleSave}
-          disabled={!hasChanges || mutation.isPending}
-          className="bg-primary hover:bg-primary/90"
-        >
-          <Save className="w-3.5 h-3.5 mr-1.5" />
-          {hasChanges
-            ? `Save ${Object.keys(edits).length} change${Object.keys(edits).length !== 1 ? "s" : ""}`
-            : "No changes"}
-        </Button>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-white/10 text-slate-300 hover:bg-white/10"
+            onClick={() => setNewSettingOpen(true)}
+          >
+            <Plus className="w-3.5 h-3.5 mr-1.5" />
+            New Setting
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={!hasChanges || mutation.isPending}
+            className="bg-primary hover:bg-primary/90"
+          >
+            <Save className="w-3.5 h-3.5 mr-1.5" />
+            {hasChanges
+              ? `Save ${pendingCount} change${pendingCount !== 1 ? "s" : ""}`
+              : "No changes"}
+          </Button>
+        </div>
       </div>
 
       {/* Maintenance mode big toggle */}
@@ -290,17 +495,29 @@ export default function AdminSettingsPage() {
                       className="flex items-center justify-between gap-4 px-5 py-3.5"
                     >
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm text-white font-medium">{key}</p>
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm text-white font-medium">{key}</p>
+                          {setting.is_sensitive && (
+                            <Lock className="w-3 h-3 text-slate-500 shrink-0" aria-label="Sensitive" />
+                          )}
+                        </div>
                         {setting.description && (
                           <p className="text-xs text-slate-500 mt-0.5">
                             {setting.description}
                           </p>
                         )}
+                        {setting.is_sensitive && (
+                          <p className="text-xs text-amber-600/80 mt-0.5">
+                            Leave blank to keep current value
+                          </p>
+                        )}
                       </div>
                       <div className="shrink-0">
                         <SettingInput
+                          keyName={key}
                           value={getValue(key, setting)}
                           type={setting.type}
+                          isSensitive={setting.is_sensitive ?? false}
                           onChange={(v) => handleChange(key, v)}
                         />
                       </div>
@@ -341,6 +558,14 @@ export default function AdminSettingsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* New Setting dialog */}
+      <NewSettingDialog
+        open={newSettingOpen}
+        onClose={() => setNewSettingOpen(false)}
+        onSave={(form) => addMutation.mutate(form)}
+        isPending={addMutation.isPending}
+      />
     </div>
   );
 }

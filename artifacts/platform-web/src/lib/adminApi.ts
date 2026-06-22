@@ -162,6 +162,7 @@ export interface AdminAuditLog {
 
 export interface AdminSetting {
   value: unknown;
+  is_sensitive: boolean;
   type: string;
   description: string | null;
   is_public: boolean;

@@ -14,16 +14,36 @@ use Illuminate\Support\Facades\Redis;
 
 class AdminSettingsController extends Controller
 {
+    /**
+     * Keys whose names match these patterns have their values masked in API
+     * responses. The raw value is never sent to the browser.
+     */
+    private const SENSITIVE_PATTERNS = ['password', 'secret'];
+
+    private function isSensitive(string $key): bool
+    {
+        $lower = strtolower($key);
+        foreach (self::SENSITIVE_PATTERNS as $pattern) {
+            if (str_contains($lower, $pattern)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public function index(): JsonResponse
     {
         $grouped = PlatformSetting::all()
             ->groupBy('group')
             ->map(fn ($group) => $group->mapWithKeys(fn ($s) => [
                 $s->key => [
-                    'value'       => $s->getTypedValue(),
-                    'type'        => $s->type,
-                    'description' => $s->description,
-                    'is_public'   => $s->is_public,
+                    // Sensitive fields: return null so the raw value never leaves the server.
+                    // The frontend renders these as password inputs with a masked placeholder.
+                    'value'        => $this->isSensitive($s->key) ? null : $s->getTypedValue(),
+                    'is_sensitive' => $this->isSensitive($s->key),
+                    'type'         => $s->type,
+                    'description'  => $s->description,
+                    'is_public'    => $s->is_public,
                 ],
             ]));
 
@@ -33,25 +53,47 @@ class AdminSettingsController extends Controller
     public function update(Request $request): JsonResponse
     {
         $request->validate([
-            'settings' => ['required', 'array'],
+            'settings'             => ['required', 'array'],
+            'meta'                 => ['sometimes', 'array'],
+            'meta.*.type'          => ['sometimes', 'string', 'in:string,boolean,integer,json'],
+            'meta.*.group'         => ['sometimes', 'string', 'max:64'],
+            'meta.*.description'   => ['sometimes', 'nullable', 'string', 'max:255'],
         ]);
 
         $updated = [];
 
         foreach ($request->input('settings', []) as $key => $value) {
+            // Null from the frontend means "sensitive field was not changed — skip it."
+            if ($value === null && $this->isSensitive($key)) {
+                continue;
+            }
+
+            $raw     = is_array($value) ? json_encode($value) : (string) $value;
+            $keyMeta = $request->input("meta.{$key}", []);
+
             $existing = PlatformSetting::where('key', $key)->first();
 
             if ($existing) {
-                $raw = is_array($value) ? json_encode($value) : (string) $value;
                 $existing->update(['value' => $raw]);
-                $updated[$key] = $existing->getTypedValue();
+                $updated[$key] = $this->isSensitive($key) ? null : $existing->fresh()->getTypedValue();
+            } else {
+                // New key — use caller-supplied meta or fall back to sensible defaults.
+                $setting = PlatformSetting::create([
+                    'key'         => $key,
+                    'value'       => $raw,
+                    'type'        => $keyMeta['type']        ?? 'string',
+                    'group'       => $keyMeta['group']       ?? 'general',
+                    'description' => $keyMeta['description'] ?? null,
+                    'is_public'   => false,
+                ]);
+                $updated[$key] = $this->isSensitive($key) ? null : $setting->getTypedValue();
             }
         }
 
         if (! empty($updated)) {
             AuditLog::record(
                 event:     'platform_settings.updated',
-                newValues: $updated,
+                newValues: array_keys($updated), // log only the keys, not the values (avoids leaking secrets)
                 actorId:   $request->user()?->id,
                 ipAddress: $request->ip(),
             );
