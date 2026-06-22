@@ -195,7 +195,54 @@ class AuthController extends Controller
 
     public function me(Request $request): JsonResponse
     {
-        return response()->json(['data' => $this->userResource($request->user())]);
+        $user = $request->user();
+
+        // Resolve the active tenant: prefer current_tenant_id, fall back to
+        // the user's first membership row, and persist it so future requests
+        // can use it without a join.
+        $tenant = null;
+        if ($user->current_tenant_id) {
+            $tenant = \App\Models\Tenant::find($user->current_tenant_id);
+        } else {
+            $tenantId = \Illuminate\Support\Facades\DB::connection('central')
+                ->table('user_tenants')
+                ->where('user_id', $user->id)
+                ->value('tenant_id');
+
+            if ($tenantId) {
+                $tenant = \App\Models\Tenant::find($tenantId);
+                // Persist so subsequent requests skip this lookup
+                $user->update(['current_tenant_id' => $tenantId]);
+            }
+        }
+
+        // Set the Spatie permission team context to the resolved tenant so that
+        // getAllPermissions() / getRoleNames() return the correct scoped values.
+        $registrar = app(\Spatie\Permission\PermissionRegistrar::class);
+        if ($tenant) {
+            $registrar->setPermissionsTeamId($tenant->id);
+        } else {
+            $registrar->setPermissionsTeamId(\Database\Seeders\RbacSeeder::CENTRAL_TEAM);
+        }
+        $registrar->forgetCachedPermissions();
+
+        $permissions = $user->getAllPermissions()->pluck('name')->values()->all();
+        $roles       = $user->getRoleNames()->values()->all();
+
+        return response()->json([
+            'data' => [
+                'user'        => $this->userResource($user),
+                'tenant'      => $tenant ? [
+                    'id'     => $tenant->id,
+                    'name'   => $tenant->name,
+                    'slug'   => $tenant->slug,
+                    'plan'   => $tenant->plan,
+                    'status' => $tenant->status,
+                ] : null,
+                'permissions' => $permissions,
+                'roles'       => $roles,
+            ],
+        ]);
     }
 
     // ── GET /api/v1/auth/email/verify/{id}/{hash} ─────────────────────────────

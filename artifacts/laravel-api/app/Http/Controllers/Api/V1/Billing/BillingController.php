@@ -10,6 +10,7 @@ use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Services\BillingService;
 use App\Services\InvoiceService;
+use App\Services\UsageTracker;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -20,31 +21,70 @@ class BillingController extends Controller
     public function __construct(
         private readonly BillingService $billing,
         private readonly InvoiceService $invoices,
+        private readonly UsageTracker   $tracker,
     ) {}
 
     // ── GET /billing/subscription ─────────────────────────────────────────────
+    //
+    // Returns the SubscriptionResponse shape expected by the TypeScript client:
+    //   { subscription: { plan_key, plan_name, status, current_period_end, quota } }
 
     public function subscription(Request $request): JsonResponse
     {
-        $tenant = $this->resolveTenant($request);
+        $tenant  = $this->resolveTenant($request);
+        $plan    = SubscriptionPlan::where('key', $tenant->plan ?? 'free')->with('features')->first();
+        $sub     = $tenant->subscriptions()->latest()->first();
+        $features = $this->billing->getPlanFeatures($tenant);
+
+        $maxUsers   = $features['max_users']       ?? null;
+        $maxStorage = $features['max_storage_gb']  ?? null;
+        $maxApi     = $features['api_calls_month'] ?? null;
+
+        $quota = [
+            'api_calls_used'   => $this->tracker->getApiCallsThisMonth($tenant->id),
+            'api_calls_limit'  => $maxApi === null || $maxApi === 'unlimited' ? null : (int) $maxApi,
+            'users_count'      => $this->tracker->getActiveUserCount($tenant->id),
+            'users_limit'      => $maxUsers === null || $maxUsers === 'unlimited' ? null : (int) $maxUsers,
+            'storage_used_mb'  => (int) round($this->tracker->getStorageGb($tenant->id) * 1000),
+            'storage_limit_mb' => $maxStorage === null || $maxStorage === 'unlimited'
+                ? null
+                : (int) ((float) $maxStorage * 1000),
+        ];
+
+        // Map Cashier stripe_status to SubscriptionStatus enum values
+        $status = match ($sub?->stripe_status) {
+            'trialing'                      => 'trialing',
+            'past_due'                      => 'past_due',
+            'canceled', 'cancelled'         => 'canceled',
+            'incomplete', 'incomplete_expired' => 'incomplete',
+            default                         => 'active',
+        };
 
         return response()->json([
-            'data' => $this->billing->currentSubscriptionStatus($tenant),
+            'subscription' => [
+                'plan_key'               => $tenant->plan ?? 'free',
+                'plan_name'              => $plan?->name ?? 'Free',
+                'status'                 => $status,
+                'current_period_start'   => null,
+                'current_period_end'     => $sub?->ends_at?->toIso8601String(),
+                'cancel_at_period_end'   => $sub ? $sub->onGracePeriod() : false,
+                'stripe_subscription_id' => $sub?->stripe_id ?? null,
+                'quota'                  => $quota,
+            ],
         ]);
     }
 
     // ── POST /billing/checkout ────────────────────────────────────────────────
+    //
+    // Accepts only { price_id }; success/cancel URLs are derived from config
+    // so the client does not need to pass them.
 
     public function checkout(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'price_id'    => ['required', 'string'],
-            'success_url' => ['required', 'url'],
-            'cancel_url'  => ['required', 'url'],
+            'price_id' => ['required', 'string'],
         ]);
 
-        // Validate price_id against active subscription plans to prevent
-        // mismatches between Stripe prices and internal plan mappings.
         $plan = SubscriptionPlan::where('stripe_price_id', $validated['price_id'])
             ->where('is_active', true)
             ->first();
@@ -55,15 +95,18 @@ class BillingController extends Controller
             ], 422);
         }
 
-        $tenant = $this->resolveTenant($request);
+        $tenant     = $this->resolveTenant($request);
+        $frontendUrl = rtrim(config('app.frontend_url', config('app.url')), '/');
+        $successUrl  = $frontendUrl . '/settings/billing?checkout=success';
+        $cancelUrl   = $frontendUrl . '/settings/billing?checkout=cancelled';
 
         try {
             $url = $this->billing->createCheckoutSession(
                 $tenant,
                 $validated['price_id'],
                 $plan->key,
-                $validated['success_url'],
-                $validated['cancel_url'],
+                $successUrl,
+                $cancelUrl,
             );
 
             AuditLog::record(
@@ -89,17 +132,17 @@ class BillingController extends Controller
     }
 
     // ── POST /billing/portal ──────────────────────────────────────────────────
+    //
+    // return_url is derived from config; no body required from the client.
 
     public function portal(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'return_url' => ['required', 'url'],
-        ]);
-
-        $tenant = $this->resolveTenant($request);
+        $tenant      = $this->resolveTenant($request);
+        $frontendUrl = rtrim(config('app.frontend_url', config('app.url')), '/');
+        $returnUrl   = $frontendUrl . '/settings/billing';
 
         try {
-            $url = $this->billing->createPortalSession($tenant, $validated['return_url']);
+            $url = $this->billing->createPortalSession($tenant, $returnUrl);
 
             return response()->json(['url' => $url]);
         } catch (\Throwable $e) {

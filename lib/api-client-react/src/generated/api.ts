@@ -316,7 +316,7 @@ export const getRegisterUrl = () => {
  */
 export const register = async (registerInput: RegisterInput, options?: RequestInit): Promise<AuthResponse> => {
 
-  return customFetch<AuthResponse>(getRegisterUrl(),
+  const response = await customFetch<{ data: AuthResponse }>(getRegisterUrl(),
   {
     ...options,
     method: 'POST',
@@ -324,7 +324,9 @@ export const register = async (registerInput: RegisterInput, options?: RequestIn
     body: JSON.stringify(
       registerInput,)
   }
-);}
+);
+  return response.data;
+}
 
 
 
@@ -387,7 +389,7 @@ export const getLoginUrl = () => {
  */
 export const login = async (loginInput: LoginInput, options?: RequestInit): Promise<LoginResult> => {
 
-  return customFetch<LoginResult>(getLoginUrl(),
+  const response = await customFetch<{ data: LoginResult }>(getLoginUrl(),
   {
     ...options,
     method: 'POST',
@@ -395,7 +397,9 @@ export const login = async (loginInput: LoginInput, options?: RequestInit): Prom
     body: JSON.stringify(
       loginInput,)
   }
-);}
+);
+  return response.data;
+}
 
 
 
@@ -953,14 +957,16 @@ export const getGetMeUrl = () => {
  */
 export const getMe = async ( options?: RequestInit): Promise<MeResponse> => {
 
-  return customFetch<MeResponse>(getGetMeUrl(),
+  const response = await customFetch<{ data: MeResponse }>(getGetMeUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-);}
+);
+  return response.data;
+}
 
 
 

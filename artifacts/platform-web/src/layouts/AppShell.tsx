@@ -158,8 +158,8 @@ export function AppShell() {
       setMe({
         user: meData.user,
         tenant: meData.tenant,
-        permissions: meData.permissions,
-        roles: meData.roles || [],
+        permissions: meData.permissions ?? [],
+        roles: meData.roles ?? [],
       });
     }
   }, [meData, setMe]);

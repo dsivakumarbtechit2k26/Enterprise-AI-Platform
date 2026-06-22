@@ -1,3 +1,3 @@
-- [Billing stack](billing-stack.md) — full Cashier billing system already built; needs STRIPE_KEY/SECRET/WEBHOOK_SECRET in .env to activate Stripe flows
-- [Tenant RBAC permission resolution](tenant-rbac.md) — billing endpoints need X-Tenant-ID header + tenant-admin role assigned in Spatie with team_id=tenantId
-- [SubscriptionPlan model](billing-stack.md) — uses `key` column (not `slug`); features stored in plan_features table as feature_key/feature_value rows
+- [Auth /me endpoint](me-endpoint-format.md) — returns { data: { user, tenant, permissions, roles } }, NOT just user; auto-resolves tenant from user_tenants when current_tenant_id is null
+- [Billing API response shapes](billing-api-shapes.md) — subscription returns { subscription: { plan_key, status, quota } }; plans returns { data: [{ key, price_monthly, features: string[] }] }
+- [Laravel response wrapper](laravel-wrapper-fix.md) — Laravel wraps everything in { data, message }; generated customFetch does NOT unwrap — login/register/getMe fixed to return response.data
