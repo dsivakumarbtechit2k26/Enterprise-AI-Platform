@@ -31,6 +31,11 @@ class BillingController extends Controller
 
     public function subscription(Request $request): JsonResponse
     {
+        // Platform admins operate in central scope — no tenant subscription.
+        if ($this->isPlatformAdmin($request)) {
+            return response()->json(['subscription' => null, 'is_platform_admin' => true]);
+        }
+
         $tenant  = $this->resolveTenant($request);
         $plan    = SubscriptionPlan::where('key', $tenant->plan ?? 'free')->with('features')->first();
         $sub     = $tenant->subscriptions()->latest()->first();
@@ -227,5 +232,17 @@ class BillingController extends Controller
         $tenant = Tenant::findOrFail($tenantId);
 
         return $tenant;
+    }
+
+    /**
+     * Returns true when the request is scoped to the central/platform context
+     * (i.e. no real tenant — platform-admin users).
+     */
+    private function isPlatformAdmin(Request $request): bool
+    {
+        $tenantId = $request->attributes->get('active_tenant_id');
+        return $tenantId === \Database\Seeders\RbacSeeder::CENTRAL_TEAM
+            || $tenantId === null
+            || ! \App\Models\Tenant::where('id', $tenantId)->exists();
     }
 }

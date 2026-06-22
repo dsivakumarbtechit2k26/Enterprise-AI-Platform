@@ -59,7 +59,12 @@ class RbacSeeder extends Seeder
             'tenants.view', 'tenants.create', 'tenants.update', 'tenants.delete',
             'billing.view', 'billing.manage',
             'platform_settings.view', 'platform_settings.update',
-            'users.view',
+            'users.view', 'users.create', 'users.update', 'users.delete', 'users.invite',
+            'roles.view', 'roles.create', 'roles.update', 'roles.delete', 'roles.assign',
+            'permissions.view', 'permissions.assign',
+            'settings.view', 'settings.update',
+            'modules.view', 'modules.manage',
+            'reports.view', 'reports.create', 'reports.export',
             'audit_logs.view',
         ]);
 

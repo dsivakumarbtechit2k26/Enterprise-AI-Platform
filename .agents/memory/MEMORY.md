@@ -1,3 +1,6 @@
 - [Auth /me endpoint](me-endpoint-format.md) — returns { data: { user, tenant, permissions, roles } }, NOT just user; auto-resolves tenant from user_tenants when current_tenant_id is null
 - [Billing API response shapes](billing-api-shapes.md) — subscription returns { subscription: { plan_key, status, quota } }; plans returns { data: [{ key, price_monthly, features: string[] }] }
 - [Laravel response wrapper](laravel-wrapper-fix.md) — Laravel wraps everything in { data, message }; generated customFetch does NOT unwrap — login/register/getMe fixed to return response.data
+- [Platform-admin permissions](platform-admin-permissions.md) — platform-admin role must include roles.*, permissions.*, users.*, settings.*, modules.*, reports.* — not just tenants/billing/platform_settings
+- [MFA setup hook pattern](mfa-setup-pattern.md) — use getMfaSetup() imperative function not useGetMfaSetup hook for button-triggered fetches; MfaSetupResponse has {qr_code_url, secret} (no .data wrapper)
+- [Billing admin guard](billing-admin-guard.md) — BillingController.resolveTenant() fails for admin (active_tenant_id='central'); add isPlatformAdmin() early-return returning {subscription:null, is_platform_admin:true}
