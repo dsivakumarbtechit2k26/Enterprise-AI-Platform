@@ -16,6 +16,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ChevronRight,
+  Layers,
 } from "lucide-react";
 import {
   Sheet,
@@ -36,6 +37,7 @@ const ADMIN_NAV: AdminNavItem[] = [
   { label: "Users",          path: "/admin/users",     icon: <Users className="w-4 h-4 shrink-0" /> },
   { label: "Plans",          path: "/admin/plans",     icon: <CreditCard className="w-4 h-4 shrink-0" /> },
   { label: "Audit Logs",     path: "/admin/audit-logs",      icon: <ScrollText className="w-4 h-4 shrink-0" /> },
+  { label: "Module Builder", path: "/admin/modules",         icon: <Layers className="w-4 h-4 shrink-0" /> },
   { label: "Security Alerts",path: "/admin/security-alerts", icon: <ShieldAlert className="w-4 h-4 shrink-0" /> },
   { label: "Settings",       path: "/admin/settings",        icon: <Settings className="w-4 h-4 shrink-0" /> },
 ];

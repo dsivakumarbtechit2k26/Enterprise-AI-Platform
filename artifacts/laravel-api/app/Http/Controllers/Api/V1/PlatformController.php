@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\DynamicModule;
 use Illuminate\Http\JsonResponse;
 
 class PlatformController extends Controller
@@ -33,6 +34,63 @@ class PlatformController extends Controller
             ->values();
 
         return response()->json(['data' => $plans]);
+    }
+
+    /**
+     * GET /api/v1/platform/modules
+     * Returns all enabled modules (auth required for tenant context).
+     */
+    public function modules(): JsonResponse
+    {
+        $modules = DynamicModule::where('is_enabled', true)
+            ->orderBy('name')
+            ->get()
+            ->map(fn ($m) => [
+                'id'          => $m->id,
+                'slug'        => $m->slug,
+                'name'        => $m->name,
+                'icon'        => $m->icon,
+                'description' => $m->description,
+                'is_enabled'  => $m->is_enabled,
+            ])
+            ->values();
+
+        return response()->json(['data' => $modules]);
+    }
+
+    /**
+     * GET /api/v1/platform/modules/{slug}
+     * Returns a single enabled module with all its field definitions.
+     */
+    public function moduleDetail(string $slug): JsonResponse
+    {
+        $module = DynamicModule::with('fields')
+            ->where('slug', $slug)
+            ->where('is_enabled', true)
+            ->firstOrFail();
+
+        return response()->json([
+            'data' => [
+                'id'          => $module->id,
+                'slug'        => $module->slug,
+                'name'        => $module->name,
+                'icon'        => $module->icon,
+                'description' => $module->description,
+                'is_enabled'  => $module->is_enabled,
+                'settings'    => $module->settings,
+                'fields'      => $module->fields->map(fn ($f) => [
+                    'id'           => $f->id,
+                    'name'         => $f->name,
+                    'label'        => $f->label,
+                    'field_type'   => $f->field_type,
+                    'options'      => $f->options,
+                    'is_required'  => $f->is_required,
+                    'show_in_list' => $f->show_in_list,
+                    'show_in_form' => $f->show_in_form,
+                    'sort_order'   => $f->sort_order,
+                ])->values(),
+            ],
+        ]);
     }
 
     // ── Internal helpers ──────────────────────────────────────────────────────

@@ -176,6 +176,35 @@ const router = createBrowserRouter(
                     },
                   ],
                 },
+                // ── Dynamic module catch-all routes ─────────────────────────
+                {
+                  path: "m/:slug",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/modules/ModuleRecordsPage");
+                    return { Component: Page };
+                  },
+                },
+                {
+                  path: "m/:slug/new",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/modules/ModuleRecordFormPage");
+                    return { Component: () => <Page mode="create" /> };
+                  },
+                },
+                {
+                  path: "m/:slug/:id",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/modules/ModuleRecordDetailPage");
+                    return { Component: Page };
+                  },
+                },
+                {
+                  path: "m/:slug/:id/edit",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/modules/ModuleRecordFormPage");
+                    return { Component: () => <Page mode="edit" /> };
+                  },
+                },
               ],
             },
           ],
@@ -246,6 +275,28 @@ const router = createBrowserRouter(
                   path: "settings",
                   lazy: async () => {
                     const { default: Page } = await import("@/pages/admin/AdminSettingsPage");
+                    return { Component: Page };
+                  },
+                },
+                // ── Module Builder ────────────────────────────────────────────
+                {
+                  path: "modules",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/admin/AdminModulesPage");
+                    return { Component: Page };
+                  },
+                },
+                {
+                  path: "modules/new",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/admin/AdminModuleBuilderPage");
+                    return { Component: Page };
+                  },
+                },
+                {
+                  path: "modules/:id/edit",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/admin/AdminModuleBuilderPage");
                     return { Component: Page };
                   },
                 },

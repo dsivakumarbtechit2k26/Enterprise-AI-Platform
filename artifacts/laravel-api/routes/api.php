@@ -22,6 +22,8 @@ use App\Http\Controllers\Api\V1\Admin\AdminUsersController;
 use App\Http\Controllers\Api\V1\Admin\AdminPlansController;
 use App\Http\Controllers\Api\V1\Admin\AdminAuditLogController;
 use App\Http\Controllers\Api\V1\Admin\AdminSettingsController;
+use App\Http\Controllers\Api\V1\Admin\AdminModuleController;
+use App\Http\Controllers\Api\V1\DynamicRecordController;
 use App\Http\Controllers\Api\V1\PublicSettingsController;
 use App\Http\Middleware\EnsurePlatformAdminKey;
 use Illuminate\Support\Facades\Route;
@@ -32,6 +34,12 @@ Route::prefix('v1')->group(function () {
     Route::get('/health', [HealthController::class, 'check'])->name('api.v1.health');
     Route::get('/version', [HealthController::class, 'version'])->name('api.v1.version');
     Route::get('/platform/plans', [PlatformController::class, 'plans'])->name('api.v1.platform.plans');
+
+    // Enabled modules list — requires auth so tenant context is available
+    Route::middleware(['auth:sanctum', 'account.not.locked'])->group(function () {
+        Route::get('/platform/modules', [PlatformController::class, 'modules'])->name('api.v1.platform.modules');
+        Route::get('/platform/modules/{slug}', [PlatformController::class, 'moduleDetail'])->name('api.v1.platform.modules.show');
+    });
 
     // Public platform settings (is_public=true rows only — no auth required)
     Route::get('/settings/public', [PublicSettingsController::class, 'index'])
@@ -233,6 +241,18 @@ Route::prefix('v1')->group(function () {
         ->middleware('signed')
         ->name('api.v1.billing.invoices.serve');
 
+    // ── Dynamic module records — authenticated tenant routes ──────────────────
+    Route::middleware(['auth:sanctum', 'account.not.locked', 'tenant.permissions'])
+        ->prefix('m/{slug}')
+        ->group(function () {
+            Route::get('/stats',           [DynamicRecordController::class, 'stats'])->name('api.v1.m.stats');
+            Route::get('/records',         [DynamicRecordController::class, 'index'])->name('api.v1.m.records.index');
+            Route::post('/records',        [DynamicRecordController::class, 'store'])->name('api.v1.m.records.store');
+            Route::get('/records/{id}',    [DynamicRecordController::class, 'show'])->name('api.v1.m.records.show');
+            Route::put('/records/{id}',    [DynamicRecordController::class, 'update'])->name('api.v1.m.records.update');
+            Route::delete('/records/{id}', [DynamicRecordController::class, 'destroy'])->name('api.v1.m.records.destroy');
+        });
+
     // ── Stripe webhook — no auth, Cashier verifies signature ─────────────────
     Route::post('/stripe/webhook', [StripeWebhookController::class, 'handleWebhook'])
         ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\VerifyCsrfToken::class])
@@ -303,6 +323,18 @@ Route::prefix('v1')->group(function () {
 
             Route::post('/settings/smtp-test', [AdminSettingsController::class, 'smtpTest'])
                 ->name('api.v1.admin.settings.smtp_test');
+
+            // Dynamic Module Builder
+            Route::get('/modules',                                         [AdminModuleController::class, 'index'])->name('api.v1.admin.modules.index');
+            Route::post('/modules',                                        [AdminModuleController::class, 'store'])->name('api.v1.admin.modules.store');
+            Route::get('/modules/{id}',                                    [AdminModuleController::class, 'show'])->name('api.v1.admin.modules.show');
+            Route::put('/modules/{id}',                                    [AdminModuleController::class, 'update'])->name('api.v1.admin.modules.update');
+            Route::delete('/modules/{id}',                                 [AdminModuleController::class, 'destroy'])->name('api.v1.admin.modules.destroy');
+            Route::patch('/modules/{id}/toggle',                           [AdminModuleController::class, 'toggle'])->name('api.v1.admin.modules.toggle');
+            Route::post('/modules/{id}/fields',                            [AdminModuleController::class, 'storeField'])->name('api.v1.admin.modules.fields.store');
+            Route::put('/modules/{id}/fields/{fieldId}',                   [AdminModuleController::class, 'updateField'])->name('api.v1.admin.modules.fields.update');
+            Route::delete('/modules/{id}/fields/{fieldId}',                [AdminModuleController::class, 'destroyField'])->name('api.v1.admin.modules.fields.destroy');
+            Route::post('/modules/{id}/fields/reorder',                    [AdminModuleController::class, 'reorderFields'])->name('api.v1.admin.modules.fields.reorder');
         });
 
     // One-time impersonation token exchange — no admin auth required.

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useMemo } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
 import { useNotificationStore } from "@/stores/notificationStore";
 import { subscribeToTenantChannel, disconnectEcho } from "@/lib/echo";
@@ -10,6 +11,8 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useToast } from "@/hooks/use-toast";
+import { fetchEnabledModules } from "@/lib/moduleApi";
+import { DynamicIcon } from "@/components/modules/DynamicIcon";
 import {
   LayoutDashboard, Shield, Key, Settings, UserCircle,
   CreditCard, LogOut, Bell, Menu, Building2,
@@ -83,7 +86,7 @@ interface NavGroup {
   items: NavItem[];
 }
 
-const NAV_GROUPS: NavGroup[] = [
+const BASE_NAV_GROUPS: NavGroup[] = [
   {
     items: [
       { label: "Dashboard",   path: "/",           icon: <LayoutDashboard className="w-4 h-4 shrink-0" />, end: true },
@@ -96,15 +99,7 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Permissions", path: "/permissions", icon: <Key className="w-4 h-4 shrink-0" />,      permission: "permissions.view" },
     ],
   },
-  {
-    label: "Modules",
-    items: [
-      { label: "My Modules",  path: "/m",           icon: <Layers className="w-4 h-4 shrink-0" />,   permission: "modules.view" },
-    ],
-  },
 ];
-
-const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -229,6 +224,34 @@ export function AppShell() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isImpersonating]                       = useState(() => !!sessionStorage.getItem("impersonating"));
   const notifiedIds = useRef<Set<string>>(new Set());
+
+  // ── Dynamic modules from API ──────────────────────────────────────────────
+
+  const { data: modulesData } = useQuery({
+    queryKey: ["platform-modules"],
+    queryFn: fetchEnabledModules,
+    enabled: !!token,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const dynamicModules = modulesData?.data ?? [];
+
+  const NAV_GROUPS: NavGroup[] = useMemo(() => {
+    const groups = [...BASE_NAV_GROUPS];
+    if (dynamicModules.length > 0) {
+      groups.push({
+        label: "Modules",
+        items: dynamicModules.map((m) => ({
+          label: m.name,
+          path: `/m/${m.slug}`,
+          icon: <DynamicIcon name={m.icon} className="w-4 h-4 shrink-0" />,
+        })),
+      });
+    }
+    return groups;
+  }, [dynamicModules]);
+
+  const ALL_NAV_ITEMS = useMemo(() => NAV_GROUPS.flatMap((g) => g.items), [NAV_GROUPS]);
 
   // ── Hydrate user/tenant/permissions ──────────────────────────────────────
 
