@@ -6,10 +6,10 @@ namespace App\Http\Controllers\Api\V1\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\MfaPendingSession;
+use App\Models\PlatformSetting;
 use App\Models\SocialAccount;
 use App\Models\User;
 use App\Services\AuditService;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -20,102 +20,80 @@ class SocialAuthController extends Controller
 {
     private const ALLOWED_PROVIDERS = ['google', 'github'];
 
-    // State/verifier pairs expire in 10 minutes (one-time use)
+    // State tokens expire in 10 minutes (one-time use, CSRF protection)
     private const STATE_TTL_MINUTES = 10;
 
     public function __construct(private readonly AuditService $audit) {}
 
     // ── GET /api/v1/auth/social/{provider} ────────────────────────────────────
-    // Returns the OAuth redirect URL + a state_verifier the client must present
-    // at the callback. The server caches hash(verifier) bound to the provider,
-    // so only the original requester (who holds the verifier) can complete the flow.
-    // This prevents OAuth login-swap / CSRF even for stateless API callers.
+    // Validates that the provider is enabled in platform_settings, then performs
+    // a server-side redirect to the OAuth provider.  The browser follows the
+    // redirect chain transparently.
 
-    public function redirect(Request $request, string $provider): JsonResponse
+    public function redirect(Request $request, string $provider): Response
     {
         $this->validateProvider($provider);
+        $this->assertProviderEnabled($provider);
 
-        // Generate cryptographically random state (sent to provider) + verifier (held by client)
-        $state    = Str::random(40);
-        $verifier = Str::random(40);
+        // Generate a random state token for CSRF protection — stored in cache
+        // so the callback can verify it without relying on browser sessions.
+        $state = Str::random(40);
+        Cache::put(
+            "oauth_state:{$state}",
+            ['provider' => $provider],
+            now()->addMinutes(self::STATE_TTL_MINUTES),
+        );
 
-        // Store {provider, verifier_hash} — never the plaintext verifier
-        Cache::put("oauth_state:{$state}", [
-            'provider'      => $provider,
-            'verifier_hash' => hash('sha256', $verifier),
-        ], now()->addMinutes(self::STATE_TTL_MINUTES));
-
-        $url = Socialite::driver($provider)
+        return Socialite::driver($provider)
             ->stateless()
             ->with(['state' => $state])
-            ->redirect()
-            ->getTargetUrl();
-
-        return response()->json([
-            'data' => [
-                'redirect_url'  => $url,
-                // Client must store this and include it as ?state_verifier= in the callback request
-                'state_verifier' => $verifier,
-            ],
-        ]);
+            ->redirect();
     }
 
     // ── GET /api/v1/auth/social/{provider}/callback ───────────────────────────
-    // Handles the OAuth provider callback. Validates:
-    //   1. state exists in cache
-    //   2. cached provider matches the route {provider}
-    //   3. hash(state_verifier) matches the cached verifier_hash
-    // Only the client that received the original redirect_url can satisfy (3).
+    // Handles the OAuth provider callback, validates state, finds/creates the
+    // user, then redirects the browser back to the frontend SPA.
 
-    public function callback(Request $request, string $provider): JsonResponse
+    public function callback(Request $request, string $provider): Response
     {
         $this->validateProvider($provider);
+        $this->assertProviderEnabled($provider);
 
-        $state    = $request->query('state');
-        $verifier = $request->query('state_verifier');
+        $frontendBase = rtrim(env('APP_FRONTEND_URL', ''), '/');
+        $callbackPath = $frontendBase . '/auth/callback';
 
-        // Retrieve cached payload without consuming yet (need to validate first)
+        // ── State / CSRF validation ───────────────────────────────────────────
+        $state  = $request->query('state');
         $cached = $state ? Cache::get("oauth_state:{$state}") : null;
 
         if (
             ! $state
-            || ! $verifier
             || ! is_array($cached)
             || ($cached['provider'] ?? null) !== $provider
-            || ! hash_equals($cached['verifier_hash'], hash('sha256', $verifier))
         ) {
-            return response()->json([
-                'type'   => 'https://platform.local/errors/oauth-invalid-state',
-                'title'  => 'Invalid OAuth State',
-                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-                'detail' => 'OAuth state validation failed. The request may have been tampered with.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return redirect($callbackPath . '?error=' . urlencode(
+                'OAuth state validation failed. The request may have been tampered with.'
+            ));
         }
 
-        // Atomically consume — prevents replay
-        Cache::forget("oauth_state:{$state}");
+        Cache::forget("oauth_state:{$state}"); // one-time use
 
+        // ── Exchange code for user ────────────────────────────────────────────
         try {
             $socialUser = Socialite::driver($provider)->stateless()->user();
-        } catch (\Throwable $e) {
-            return response()->json([
-                'type'   => 'https://platform.local/errors/oauth-failed',
-                'title'  => 'OAuth Failed',
-                'status' => Response::HTTP_BAD_REQUEST,
-                'detail' => 'Could not authenticate with ' . ucfirst($provider) . '.',
-            ], Response::HTTP_BAD_REQUEST);
+        } catch (\Throwable) {
+            return redirect($callbackPath . '?error=' . urlencode(
+                'Could not authenticate with ' . ucfirst($provider) . '. Please try again.'
+            ));
         }
 
         if (! $socialUser->getEmail()) {
-            return response()->json([
-                'type'   => 'https://platform.local/errors/oauth-no-email',
-                'title'  => 'Email Not Provided',
-                'status' => Response::HTTP_UNPROCESSABLE_ENTITY,
-                'detail' => 'The OAuth provider did not return an email address.',
-            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+            return redirect($callbackPath . '?error=' . urlencode(
+                ucfirst($provider) . ' did not provide an email address.'
+            ));
         }
 
-        // Find existing social account link
+        // ── Find or create user ───────────────────────────────────────────────
         $social = SocialAccount::where('provider', $provider)
             ->where('provider_id', $socialUser->getId())
             ->first();
@@ -127,7 +105,6 @@ class SocialAuthController extends Controller
                 'provider_refresh_token' => $socialUser->refreshToken,
             ]);
         } else {
-            // Find or create user by email
             $user = User::firstOrCreate(
                 ['email' => strtolower($socialUser->getEmail())],
                 [
@@ -148,7 +125,7 @@ class SocialAuthController extends Controller
         $user->clearFailedLogins();
         $this->audit->logAuth('auth.oauth.login', $user->id, $request, ['provider' => $provider]);
 
-        // Enforce MFA challenge for MFA-enabled users — OAuth does not bypass 2FA
+        // ── MFA gate — OAuth does not bypass 2FA ─────────────────────────────
         if ($user->mfa_enabled) {
             $rawToken = Str::random(64);
 
@@ -160,32 +137,36 @@ class SocialAuthController extends Controller
 
             $this->audit->logAuth('auth.login.mfa_required', $user->id, $request, ['via' => 'oauth']);
 
-            return response()->json([
-                'data' => [
-                    'mfa_required' => true,
-                    'mfa_token'    => $rawToken,
-                ],
-                'message' => 'MFA verification required.',
-            ], Response::HTTP_OK);
+            return redirect(
+                $callbackPath
+                . '?mfa_required=1'
+                . '&mfa_token=' . urlencode($rawToken)
+                . '&mfa_method=' . urlencode($user->mfa_method ?? 'totp')
+            );
         }
 
         $token = $user->createToken('api')->plainTextToken;
 
-        return response()->json([
-            'data' => [
-                'user'  => [
-                    'id'                => $user->id,
-                    'name'              => $user->name,
-                    'email'             => $user->email,
-                    'email_verified_at' => $user->email_verified_at?->toIso8601String(),
-                    'avatar'            => $user->avatar,
-                    'mfa_enabled'       => $user->mfa_enabled,
-                    'created_at'        => $user->created_at?->toIso8601String(),
-                ],
-                'token' => $token,
-            ],
-            'message' => 'OAuth login successful.',
-        ]);
+        return redirect($callbackPath . '?token=' . urlencode($token));
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * Abort with 403 if the provider is disabled in platform_settings.
+     * The admin UI hides the buttons when disabled, but this guard prevents
+     * direct URL access or API bypass attempts.
+     */
+    private function assertProviderEnabled(string $provider): void
+    {
+        $enabled = PlatformSetting::get("oauth.{$provider}.enabled", false);
+
+        if (! $enabled) {
+            abort(
+                Response::HTTP_FORBIDDEN,
+                ucfirst($provider) . ' OAuth login is currently disabled by the platform administrator.'
+            );
+        }
     }
 
     private function validateProvider(string $provider): void

@@ -7,11 +7,13 @@ import { Loader2 } from "lucide-react";
 /**
  * Handles the OAuth redirect from the backend after social authentication.
  *
- * The backend redirects here with one of:
- *   - ?token=<jwt>&tenant_id=<id>  → successful auth
- *   - ?error=<message>             → auth failure
+ * The backend redirects here (GET /auth/callback) with one of:
+ *   - ?token=<sanctum_token>           → successful auth, no MFA
+ *   - ?mfa_required=1&mfa_token=<tok>  → MFA challenge required
+ *   - ?error=<url-encoded message>     → auth failure
  *
- * We store the token only; AppShell's useGetMe call hydrates user/tenant/permissions.
+ * Token storage: we store the raw token via setToken so AppShell's useGetMe
+ * call hydrates the user/tenant/permissions on next render.
  */
 export default function OAuthCallbackPage() {
   const [searchParams] = useSearchParams();
@@ -24,8 +26,11 @@ export default function OAuthCallbackPage() {
     if (handled.current) return;
     handled.current = true;
 
-    const token = searchParams.get("token");
-    const error = searchParams.get("error");
+    const token      = searchParams.get("token");
+    const error      = searchParams.get("error");
+    const mfaRequired = searchParams.get("mfa_required") === "1";
+    const mfaToken   = searchParams.get("mfa_token");
+    const mfaMethod  = searchParams.get("mfa_method") ?? "totp";
 
     if (error) {
       toast({
@@ -34,6 +39,15 @@ export default function OAuthCallbackPage() {
         variant: "destructive",
       });
       navigate("/login", { replace: true });
+      return;
+    }
+
+    if (mfaRequired && mfaToken) {
+      // Redirect to the MFA challenge page with the pending token.
+      navigate("/mfa", {
+        replace: true,
+        state: { mfa_token: mfaToken, mfa_method: mfaMethod },
+      });
       return;
     }
 
@@ -47,7 +61,7 @@ export default function OAuthCallbackPage() {
       return;
     }
 
-    // Store token only — user/tenant/permissions are fetched by AppShell via /me.
+    // Store token — user/tenant/permissions are fetched by AppShell via /me.
     setToken(token);
     navigate("/", { replace: true });
   }, [searchParams, navigate, setToken, toast]);

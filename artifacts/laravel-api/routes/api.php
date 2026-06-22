@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\V1\Admin\AdminUsersController;
 use App\Http\Controllers\Api\V1\Admin\AdminPlansController;
 use App\Http\Controllers\Api\V1\Admin\AdminAuditLogController;
 use App\Http\Controllers\Api\V1\Admin\AdminSettingsController;
+use App\Http\Controllers\Api\V1\PublicSettingsController;
 use App\Http\Middleware\EnsurePlatformAdminKey;
 use Illuminate\Support\Facades\Route;
 
@@ -31,6 +32,11 @@ Route::prefix('v1')->group(function () {
     Route::get('/health', [HealthController::class, 'check'])->name('api.v1.health');
     Route::get('/version', [HealthController::class, 'version'])->name('api.v1.version');
     Route::get('/platform/plans', [PlatformController::class, 'plans'])->name('api.v1.platform.plans');
+
+    // Public platform settings (is_public=true rows only — no auth required)
+    Route::get('/settings/public', [PublicSettingsController::class, 'index'])
+        ->middleware('throttle:60,1')
+        ->name('api.v1.settings.public');
 
     // ── Auth — unauthenticated ─────────────────────────────────────────────────
     Route::prefix('auth')->group(function () {
