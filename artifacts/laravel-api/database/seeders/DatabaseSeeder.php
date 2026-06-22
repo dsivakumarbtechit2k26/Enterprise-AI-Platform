@@ -13,6 +13,8 @@ class DatabaseSeeder extends Seeder
             PlatformSettingsSeeder::class,
             RbacSeeder::class,
             PlatformAdminSeeder::class,
+            SuperAdminSeeder::class,
+            SubscriptionPlanSeeder::class,
         ]);
     }
 }

@@ -14,7 +14,7 @@ import {
   LayoutDashboard, Shield, Key, Settings, UserCircle,
   CreditCard, LogOut, Bell, Menu, Building2,
   CheckCheck, PanelLeftClose, PanelLeftOpen,
-  Search, ChevronRight, ChevronsUpDown, Check,
+  Search, ChevronRight, Sun, Moon, Layers,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -25,14 +25,33 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+
+function useTheme() {
+  const [isDark, setIsDark] = useState(
+    () => document.documentElement.classList.contains("dark"),
+  );
+  const toggle = () => {
+    const next = !isDark;
+    document.documentElement.classList.toggle("dark", next);
+    setIsDark(next);
+    localStorage.setItem("theme", next ? "dark" : "light");
+  };
+  useEffect(() => {
+    const saved = localStorage.getItem("theme");
+    if (saved === "light") {
+      document.documentElement.classList.remove("dark");
+      setIsDark(false);
+    }
+  }, []);
+  return { isDark, toggle };
+}
 
 // ── Impersonation banner ──────────────────────────────────────────────────────
 
-interface ImpersonationInfo {
-  tenantName: string;
-  userName: string;
-  startedAt: string;
-}
+interface ImpersonationInfo { tenantName: string; userName: string; startedAt: string; }
 
 function ImpersonationBanner({ onExit }: { onExit: () => void }) {
   const raw = sessionStorage.getItem("impersonating");
@@ -41,13 +60,8 @@ function ImpersonationBanner({ onExit }: { onExit: () => void }) {
   try { info = JSON.parse(raw); } catch { return null; }
   return (
     <div className="bg-amber-500 text-amber-950 text-sm font-semibold flex items-center justify-between px-4 py-2 shrink-0 z-50">
-      <span>
-        Impersonating <strong>{info.tenantName}</strong> as {info.userName}
-      </span>
-      <button
-        onClick={onExit}
-        className="text-xs underline underline-offset-2 hover:no-underline ml-4 font-bold"
-      >
+      <span>Impersonating <strong>{info.tenantName}</strong> as {info.userName}</span>
+      <button onClick={onExit} className="text-xs underline underline-offset-2 hover:no-underline ml-4 font-bold">
         Exit Session
       </button>
     </div>
@@ -61,14 +75,36 @@ interface NavItem {
   path: string;
   icon: React.ReactNode;
   permission?: string;
+  end?: boolean;
 }
 
-const ALL_NAV_ITEMS: NavItem[] = [
-  { label: "Dashboard",   path: "/",                icon: <LayoutDashboard className="w-4 h-4 shrink-0" /> },
-  { label: "Roles",       path: "/roles",            icon: <Shield className="w-4 h-4 shrink-0" />,   permission: "roles.view" },
-  { label: "Permissions", path: "/permissions",      icon: <Key className="w-4 h-4 shrink-0" />,       permission: "permissions.view" },
-  { label: "Settings",    path: "/settings/profile", icon: <Settings className="w-4 h-4 shrink-0" /> },
+interface NavGroup {
+  label?: string;
+  items: NavItem[];
+}
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    items: [
+      { label: "Dashboard",   path: "/",           icon: <LayoutDashboard className="w-4 h-4 shrink-0" />, end: true },
+    ],
+  },
+  {
+    label: "Access Control",
+    items: [
+      { label: "Roles",       path: "/roles",       icon: <Shield className="w-4 h-4 shrink-0" />,  permission: "roles.view" },
+      { label: "Permissions", path: "/permissions", icon: <Key className="w-4 h-4 shrink-0" />,      permission: "permissions.view" },
+    ],
+  },
+  {
+    label: "Modules",
+    items: [
+      { label: "My Modules",  path: "/m",           icon: <Layers className="w-4 h-4 shrink-0" />,   permission: "modules.view" },
+    ],
+  },
 ];
+
+const ALL_NAV_ITEMS = NAV_GROUPS.flatMap((g) => g.items);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -86,42 +122,93 @@ function formatNotificationTime(ts: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-// ── NavLinks (shared between desktop sidebar and mobile drawer) ───────────────
+// ── NavLink ───────────────────────────────────────────────────────────────────
 
-function NavLinks({
-  items,
+function NavLink({
+  item,
   currentPath,
   collapsed,
   onNavigate,
 }: {
-  items: NavItem[];
+  item: NavItem;
   currentPath: string;
   collapsed?: boolean;
   onNavigate?: () => void;
 }) {
+  const isActive = item.end
+    ? currentPath === item.path
+    : item.path !== "/" && currentPath.startsWith(item.path);
+
+  const cls = `flex items-center gap-3 rounded-lg transition-all duration-150 text-sm font-medium ${
+    collapsed ? "justify-center px-0 py-2.5 w-10 mx-auto" : "px-3 py-2"
+  } ${
+    isActive
+      ? "bg-primary/15 text-primary shadow-sm"
+      : "text-[hsl(var(--sidebar-muted-foreground))] hover:bg-[hsl(var(--sidebar-accent))] hover:text-[hsl(var(--sidebar-foreground))]"
+  }`;
+
+  const link = (
+    <Link to={item.path} onClick={onNavigate} className={cls} title={collapsed ? item.label : undefined}>
+      <span className={isActive ? "text-primary" : ""}>{item.icon}</span>
+      {!collapsed && <span className="truncate">{item.label}</span>}
+      {!collapsed && isActive && (
+        <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+      )}
+    </Link>
+  );
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{link}</TooltipTrigger>
+        <TooltipContent side="right">{item.label}</TooltipContent>
+      </Tooltip>
+    );
+  }
+  return link;
+}
+
+// ── NavLinks (full sidebar groups) ───────────────────────────────────────────
+
+function NavLinks({
+  groups,
+  currentPath,
+  collapsed,
+  onNavigate,
+  permissions,
+}: {
+  groups: NavGroup[];
+  currentPath: string;
+  collapsed?: boolean;
+  onNavigate?: () => void;
+  permissions: string[];
+}) {
+  const hasPermission = (perm?: string) => !perm || permissions.includes(perm);
+
   return (
-    <nav className={`space-y-1 ${collapsed ? "p-2" : "p-4"}`}>
-      {items.map((item) => {
-        const isActive =
-          currentPath === item.path ||
-          (item.path !== "/" && currentPath.startsWith(item.path));
+    <nav className={`flex-1 overflow-y-auto ${collapsed ? "py-3 px-1" : "py-3 px-3"}`}>
+      {groups.map((group, gi) => {
+        const visible = group.items.filter((i) => hasPermission(i.permission));
+        if (visible.length === 0) return null;
         return (
-          <Link
-            key={item.path}
-            to={item.path}
-            onClick={onNavigate}
-            title={collapsed ? item.label : undefined}
-            className={`flex items-center gap-3 rounded-md transition-colors font-medium text-sm ${
-              collapsed ? "justify-center px-2 py-2" : "px-3 py-2"
-            } ${
-              isActive
-                ? "bg-primary/10 text-primary"
-                : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-            }`}
-          >
-            {item.icon}
-            {!collapsed && <span>{item.label}</span>}
-          </Link>
+          <div key={gi} className="mb-4">
+            {group.label && !collapsed && (
+              <p className="px-3 mb-1.5 text-[10px] font-semibold uppercase tracking-widest text-[hsl(var(--sidebar-muted-foreground))]">
+                {group.label}
+              </p>
+            )}
+            <div className="space-y-0.5">
+              {visible.map((item) => (
+                <NavLink
+                  key={item.path}
+                  item={item}
+                  currentPath={currentPath}
+                  collapsed={collapsed}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </div>
+          </div>
         );
       })}
     </nav>
@@ -131,17 +218,16 @@ function NavLinks({
 // ── AppShell ──────────────────────────────────────────────────────────────────
 
 export function AppShell() {
-  const { token, user, tenant, activeTenantId, setMe, clearAuth, hasPermission } = useAuthStore();
+  const { token, user, tenant, activeTenantId, permissions, setMe, clearAuth, hasPermission } = useAuthStore();
   const { notifications, unreadCount, markRead, markAllRead } = useNotificationStore();
+  const { isDark, toggle: toggleTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
   const logoutMutation = useLogout();
   const [mobileOpen, setMobileOpen]             = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [isImpersonating, setIsImpersonating]   = useState(
-    () => !!sessionStorage.getItem("impersonating"),
-  );
+  const [isImpersonating]                       = useState(() => !!sessionStorage.getItem("impersonating"));
   const notifiedIds = useRef<Set<string>>(new Set());
 
   // ── Hydrate user/tenant/permissions ──────────────────────────────────────
@@ -167,9 +253,7 @@ export function AppShell() {
   // ── Echo subscription ─────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (activeTenantId) {
-      subscribeToTenantChannel(activeTenantId);
-    }
+    if (activeTenantId) subscribeToTenantChannel(activeTenantId);
     return () => { disconnectEcho(); };
   }, [activeTenantId]);
 
@@ -189,12 +273,6 @@ export function AppShell() {
     }
   }, [notifications, toast]);
 
-  // ── Permission-filtered nav items ─────────────────────────────────────────
-
-  const navItems = ALL_NAV_ITEMS.filter(
-    (item) => !item.permission || hasPermission(item.permission),
-  );
-
   // ── Breadcrumbs ───────────────────────────────────────────────────────────
 
   const breadcrumbs = useMemo(() => {
@@ -205,7 +283,7 @@ export function AppShell() {
       const nav = ALL_NAV_ITEMS.find(
         (n) => n.path === path || (n.path !== "/" && path.startsWith(n.path)),
       );
-      const label = nav?.label ?? (seg.charAt(0).toUpperCase() + seg.slice(1));
+      const label = nav?.label ?? (seg.charAt(0).toUpperCase() + seg.slice(1).replace(/-/g, " "));
       return { label, path };
     });
   }, [location.pathname]);
@@ -214,14 +292,9 @@ export function AppShell() {
 
   const handleLogout = () => {
     logoutMutation.mutate(undefined, {
-      onSettled: () => {
-        clearAuth();
-        navigate("/login");
-      },
+      onSettled: () => { clearAuth(); navigate("/login"); },
     });
   };
-
-  // ── Exit impersonation ────────────────────────────────────────────────────
 
   const handleExitImpersonation = () => {
     sessionStorage.removeItem("impersonating");
@@ -229,179 +302,140 @@ export function AppShell() {
     navigate("/login");
   };
 
-  // ── Tenant switcher header content ────────────────────────────────────────
+  // ── Sidebar header ────────────────────────────────────────────────────────
 
-  const tenantHeader = (
-    <div className="h-16 flex items-center px-4 border-b shrink-0">
-      {!sidebarCollapsed ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="flex items-center gap-2 w-full text-left rounded-md px-1 py-1 hover:bg-sidebar-accent transition-colors"
-              aria-label="Switch workspace"
-            >
-              <Building2 className="w-5 h-5 text-primary shrink-0" />
-              <span className="font-bold tracking-tight truncate flex-1">
-                {tenant?.name || "Platform"}
-              </span>
-              <ChevronsUpDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-56" align="start" sideOffset={4}>
-            <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-              Current workspace
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="gap-2 cursor-default" onSelect={(e) => e.preventDefault()}>
-              <Building2 className="w-4 h-4 shrink-0" />
-              <span className="truncate flex-1">{tenant?.name}</span>
-              <Check className="w-4 h-4 text-primary shrink-0" />
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link to="/settings/profile" className="flex items-center gap-2 cursor-pointer">
-                <Settings className="w-4 h-4 shrink-0" />
-                Workspace settings
-              </Link>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : (
-        <Building2 className="w-5 h-5 text-primary mx-auto" aria-label="Workspace" />
+  const sidebarHeader = (
+    <div className={`h-14 flex items-center shrink-0 border-b border-[hsl(var(--sidebar-border))] ${sidebarCollapsed ? "justify-center px-2" : "px-4 gap-2.5"}`}>
+      <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
+        <Building2 className="w-4 h-4 text-white" />
+      </div>
+      {!sidebarCollapsed && (
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-[hsl(var(--sidebar-foreground))] truncate leading-tight">
+            {tenant?.name || "Enterprise"}
+          </p>
+          <p className="text-[10px] text-[hsl(var(--sidebar-muted-foreground))] leading-tight">Platform</p>
+        </div>
       )}
     </div>
   );
 
-  // ── Sidebar user card ─────────────────────────────────────────────────────
+  // ── Sidebar footer ────────────────────────────────────────────────────────
 
   const sidebarFooter = (
-    <div className="mt-auto border-t">
-      {/* Collapse toggle */}
-      <div className={`flex ${sidebarCollapsed ? "justify-center" : "justify-end"} p-2`}>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-          onClick={() => setSidebarCollapsed((c) => !c)}
-          aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-        >
-          {sidebarCollapsed
-            ? <PanelLeftOpen className="w-4 h-4" />
-            : <PanelLeftClose className="w-4 h-4" />}
-        </Button>
-      </div>
+    <div className="shrink-0 border-t border-[hsl(var(--sidebar-border))] p-3">
+      <div className={`flex items-center ${sidebarCollapsed ? "flex-col gap-2" : "gap-2"}`}>
+        {/* Theme toggle */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-[hsl(var(--sidebar-muted-foreground))] hover:text-[hsl(var(--sidebar-foreground))] hover:bg-[hsl(var(--sidebar-accent))]"
+              onClick={toggleTheme}
+              aria-label="Toggle theme"
+            >
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{isDark ? "Light mode" : "Dark mode"}</TooltipContent>
+        </Tooltip>
 
-      {!sidebarCollapsed && (
-        <div className="flex items-center px-4 pb-4 gap-3">
-          <Avatar className="h-8 w-8 border shrink-0">
-            <AvatarImage src={user?.avatar ?? undefined} />
-            <AvatarFallback>{user?.name ? getInitials(user.name) : "U"}</AvatarFallback>
-          </Avatar>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{user?.name ?? "Loading…"}</p>
-            <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+        {/* Collapse toggle */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-[hsl(var(--sidebar-muted-foreground))] hover:text-[hsl(var(--sidebar-foreground))] hover:bg-[hsl(var(--sidebar-accent))]"
+              onClick={() => setSidebarCollapsed((c) => !c)}
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right">{sidebarCollapsed ? "Expand" : "Collapse"}</TooltipContent>
+        </Tooltip>
+
+        {/* User avatar (only when expanded) */}
+        {!sidebarCollapsed && (
+          <div className="flex items-center gap-2 flex-1 min-w-0 ml-1">
+            <Avatar className="h-7 w-7 shrink-0 border border-[hsl(var(--sidebar-border))]">
+              <AvatarImage src={user?.avatar ?? undefined} />
+              <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                {user?.name ? getInitials(user.name) : "U"}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold text-[hsl(var(--sidebar-foreground))] truncate leading-tight">{user?.name ?? "…"}</p>
+              <p className="text-[10px] text-[hsl(var(--sidebar-muted-foreground))] truncate leading-tight">{user?.email}</p>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 
-  // ── Full sidebar content (shared with mobile drawer) ─────────────────────
+  // ── Full sidebar ──────────────────────────────────────────────────────────
 
-  const mobileSidebarContent = (
-    <>
-      <div className="h-16 flex items-center px-4 border-b shrink-0">
-        <Building2 className="w-5 h-5 text-primary mr-2 shrink-0" />
-        <span className="font-bold tracking-tight truncate">{tenant?.name || "Platform"}</span>
-      </div>
+  const sidebarContent = (onNavigate?: () => void) => (
+    <div className="flex flex-col h-full bg-[hsl(var(--sidebar))]">
+      {sidebarHeader}
       <NavLinks
-        items={navItems}
+        groups={NAV_GROUPS}
         currentPath={location.pathname}
-        onNavigate={() => setMobileOpen(false)}
+        collapsed={sidebarCollapsed}
+        onNavigate={onNavigate}
+        permissions={permissions ?? []}
       />
-      <div className="mt-auto p-4 border-t flex items-center gap-3">
-        <Avatar className="h-8 w-8 border shrink-0">
-          <AvatarImage src={user?.avatar ?? undefined} />
-          <AvatarFallback>{user?.name ? getInitials(user.name) : "U"}</AvatarFallback>
-        </Avatar>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{user?.name ?? "Loading…"}</p>
-          <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
-        </div>
-      </div>
-    </>
+      {sidebarFooter}
+    </div>
   );
 
   return (
-    <div className="flex flex-col h-screen">
-      {/* Impersonation banner — visible at the very top when impersonating */}
-      {isImpersonating && (
-        <ImpersonationBanner onExit={handleExitImpersonation} />
-      )}
+    <div className="flex flex-col h-screen bg-background">
+      {isImpersonating && <ImpersonationBanner onExit={handleExitImpersonation} />}
 
-      <div className="flex flex-1 bg-muted/20 min-h-0">
-        {/* ── Desktop sidebar ─────────────────────────────────────────────── */}
+      <div className="flex flex-1 min-h-0">
+        {/* ── Desktop sidebar ───────────────────────────────────────────── */}
         <aside
-          className={`${
-            sidebarCollapsed ? "w-16" : "w-64"
-          } bg-sidebar border-r flex-col hidden md:flex transition-all duration-200 shrink-0`}
+          className={`${sidebarCollapsed ? "w-[60px]" : "w-60"} hidden md:flex flex-col shrink-0 transition-all duration-200 border-r border-[hsl(var(--sidebar-border))]`}
         >
-          {tenantHeader}
-          <NavLinks
-            items={navItems}
-            currentPath={location.pathname}
-            collapsed={sidebarCollapsed}
-          />
-          {sidebarFooter}
+          {sidebarContent()}
         </aside>
 
-        {/* ── Mobile drawer ───────────────────────────────────────────────── */}
+        {/* ── Mobile drawer ─────────────────────────────────────────────── */}
         <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-          <SheetContent side="left" className="p-0 w-64 bg-sidebar flex flex-col">
-            <SheetHeader className="sr-only">
-              <SheetTitle>Navigation</SheetTitle>
-            </SheetHeader>
-            {mobileSidebarContent}
+          <SheetContent side="left" className="p-0 w-60 border-r border-[hsl(var(--sidebar-border))]">
+            <SheetHeader className="sr-only"><SheetTitle>Navigation</SheetTitle></SheetHeader>
+            {sidebarContent(() => setMobileOpen(false))}
           </SheetContent>
         </Sheet>
 
-        {/* ── Main content ────────────────────────────────────────────────── */}
+        {/* ── Main content ──────────────────────────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0">
 
-          {/* Header */}
-          <header className="h-16 bg-card border-b flex items-center justify-between px-4 sm:px-6 z-10 shrink-0 gap-3">
+          {/* ── Top header ────────────────────────────────────────────────── */}
+          <header className="h-14 bg-card border-b border-border flex items-center justify-between px-4 sm:px-6 z-10 shrink-0 gap-3">
 
-            {/* Left: mobile menu + breadcrumbs */}
+            {/* Left */}
             <div className="flex items-center gap-2 min-w-0">
-              {/* Mobile menu trigger */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="md:hidden shrink-0"
-                onClick={() => setMobileOpen(true)}
-                aria-label="Open navigation"
-              >
-                <Menu className="w-5 h-5" />
+              <Button variant="ghost" size="icon" className="md:hidden shrink-0 h-8 w-8" onClick={() => setMobileOpen(true)} aria-label="Open navigation">
+                <Menu className="w-4 h-4" />
               </Button>
 
-              {/* Breadcrumb trail (desktop) */}
+              {/* Breadcrumb */}
               <nav className="hidden md:flex items-center gap-1 text-sm min-w-0" aria-label="Breadcrumb">
-                <Link
-                  to="/"
-                  className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                >
-                  Dashboard
+                <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors shrink-0 text-xs">
+                  Home
                 </Link>
                 {breadcrumbs.map((crumb, i) => (
                   <span key={crumb.path} className="flex items-center gap-1 min-w-0">
                     <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
                     {i === breadcrumbs.length - 1 ? (
-                      <span className="font-medium text-foreground truncate">{crumb.label}</span>
+                      <span className="text-xs font-medium text-foreground truncate">{crumb.label}</span>
                     ) : (
-                      <Link
-                        to={crumb.path}
-                        className="text-muted-foreground hover:text-foreground transition-colors truncate"
-                      >
+                      <Link to={crumb.path} className="text-xs text-muted-foreground hover:text-foreground transition-colors truncate">
                         {crumb.label}
                       </Link>
                     )}
@@ -409,34 +443,30 @@ export function AppShell() {
                 ))}
               </nav>
 
-              {/* Tenant name (mobile) */}
-              <span className="md:hidden font-semibold truncate">{tenant?.name || "Platform"}</span>
+              <span className="md:hidden text-sm font-semibold truncate">{tenant?.name || "Platform"}</span>
             </div>
 
-            {/* Right: search + notifications + user menu */}
-            <div className="flex items-center gap-2 shrink-0">
+            {/* Right */}
+            <div className="flex items-center gap-1.5 shrink-0">
 
-              {/* Search bar */}
+              {/* Search */}
               <div className="relative hidden lg:flex items-center">
-                <Search className="absolute left-2.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <Search className="absolute left-2.5 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
                 <Input
                   type="search"
                   placeholder="Search…"
-                  className="pl-8 h-8 w-48 xl:w-64 bg-muted/50 border-muted text-sm"
+                  className="pl-8 h-8 w-44 xl:w-60 bg-muted/40 border-border/50 text-xs"
                   aria-label="Search"
                 />
               </div>
 
-              {/* ── Notification bell ──────────────────────────────────── */}
+              {/* Notifications */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="relative" aria-label="Notifications">
-                    <Bell className="w-5 h-5 text-muted-foreground" />
+                  <Button variant="ghost" size="icon" className="relative h-8 w-8" aria-label="Notifications">
+                    <Bell className="w-4 h-4 text-muted-foreground" />
                     {unreadCount > 0 && (
-                      <Badge
-                        variant="destructive"
-                        className="absolute -top-1 -right-1 h-5 min-w-5 px-1 text-[10px] flex items-center justify-center"
-                      >
+                      <Badge variant="destructive" className="absolute -top-0.5 -right-0.5 h-4 min-w-4 px-1 text-[9px] flex items-center justify-center">
                         {unreadCount > 9 ? "9+" : unreadCount}
                       </Badge>
                     )}
@@ -446,47 +476,32 @@ export function AppShell() {
                   <div className="flex items-center justify-between px-3 py-2 border-b">
                     <span className="text-sm font-semibold">Notifications</span>
                     {unreadCount > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 text-xs text-muted-foreground"
-                        onClick={() => markAllRead()}
-                      >
+                      <Button variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground" onClick={() => markAllRead()}>
                         <CheckCheck className="w-3 h-3 mr-1" /> Mark all read
                       </Button>
                     )}
                   </div>
-                  <ScrollArea className="h-80">
+                  <ScrollArea className="h-72">
                     {notifications.length === 0 ? (
                       <div className="flex flex-col items-center justify-center h-32 text-muted-foreground text-sm">
-                        <Bell className="w-8 h-8 mb-2 opacity-30" />
-                        No notifications yet
+                        <Bell className="w-7 h-7 mb-2 opacity-20" />
+                        <span className="text-xs">No notifications</span>
                       </div>
                     ) : (
                       notifications.slice(0, 20).map((n) => (
                         <div
                           key={n.id}
-                          className={`px-3 py-2.5 border-b last:border-0 cursor-pointer hover:bg-muted/50 transition-colors ${
-                            !n.read ? "bg-primary/5" : ""
-                          }`}
+                          className={`px-3 py-2.5 border-b last:border-0 cursor-pointer hover:bg-muted/50 transition-colors ${!n.read ? "bg-primary/5" : ""}`}
                           onClick={() => markRead(n.id)}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
-                              <p className={`text-sm font-medium truncate ${!n.read ? "text-foreground" : "text-muted-foreground"}`}>
-                                {n.title}
-                              </p>
-                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                                {n.body}
-                              </p>
+                              <p className={`text-xs font-semibold truncate ${!n.read ? "text-foreground" : "text-muted-foreground"}`}>{n.title}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.body}</p>
                             </div>
                             <div className="flex flex-col items-end gap-1 shrink-0">
-                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                                {formatNotificationTime(n.created_at)}
-                              </span>
-                              {!n.read && (
-                                <span className="w-2 h-2 rounded-full bg-primary" />
-                              )}
+                              <span className="text-[10px] text-muted-foreground whitespace-nowrap">{formatNotificationTime(n.created_at)}</span>
+                              {!n.read && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}
                             </div>
                           </div>
                         </div>
@@ -496,20 +511,22 @@ export function AppShell() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              {/* ── User avatar dropdown ───────────────────────────────── */}
+              {/* User menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                    <Avatar className="h-8 w-8 border">
+                  <Button variant="ghost" className="h-8 w-8 rounded-full p-0">
+                    <Avatar className="h-8 w-8 border border-border">
                       <AvatarImage src={user?.avatar ?? undefined} />
-                      <AvatarFallback>{user?.name ? getInitials(user.name) : "U"}</AvatarFallback>
+                      <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                        {user?.name ? getInitials(user.name) : "U"}
+                      </AvatarFallback>
                     </Avatar>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-56" align="end" forceMount>
-                  <DropdownMenuLabel className="font-normal">
-                    <div className="flex flex-col space-y-1">
-                      <p className="text-sm font-medium leading-none">{user?.name ?? "Loading…"}</p>
+                  <DropdownMenuLabel className="font-normal py-2">
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-sm font-semibold leading-none">{user?.name ?? "…"}</p>
                       <p className="text-xs leading-none text-muted-foreground">{user?.email}</p>
                     </div>
                   </DropdownMenuLabel>
@@ -530,10 +547,22 @@ export function AppShell() {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive cursor-pointer"
-                    onClick={handleLogout}
-                  >
+                  <DropdownMenuItem onClick={toggleTheme} className="cursor-pointer">
+                    {isDark ? <Sun className="w-4 h-4 mr-2" /> : <Moon className="w-4 h-4 mr-2" />}
+                    {isDark ? "Light mode" : "Dark mode"}
+                  </DropdownMenuItem>
+                  {hasPermission("platform.admin") && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild>
+                        <Link to="/admin" className="w-full flex items-center cursor-pointer text-primary">
+                          <Settings className="w-4 h-4 mr-2" /> Admin Console
+                        </Link>
+                      </DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem className="text-destructive focus:text-destructive cursor-pointer" onClick={handleLogout}>
                     <LogOut className="w-4 h-4 mr-2" /> Log out
                   </DropdownMenuItem>
                 </DropdownMenuContent>
@@ -542,8 +571,8 @@ export function AppShell() {
           </header>
 
           {/* Page content */}
-          <main className="flex-1 overflow-auto p-4 sm:p-8">
-            <div className="max-w-6xl mx-auto">
+          <main className="flex-1 overflow-auto p-5 sm:p-7">
+            <div className="max-w-7xl mx-auto">
               <Outlet />
             </div>
           </main>

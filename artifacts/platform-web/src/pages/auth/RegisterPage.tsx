@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Building2, ArrowRight, Loader2 } from "lucide-react";
+import { Loader2, Zap, ArrowRight } from "lucide-react";
 
 const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -25,14 +25,11 @@ type RegisterValues = z.infer<typeof registerSchema>;
 
 const REGISTER_FIELDS = ["name", "email", "password", "password_confirmation", "tenant_name"] as const;
 
-/** Map Laravel 422 validation errors onto react-hook-form fields.
- *  The generated API client throws ApiError; the response body lives in err.data. */
 function applyServerErrors(
   err: unknown,
   setError: (field: typeof REGISTER_FIELDS[number], opts: { message: string }) => void,
   toast: ReturnType<typeof useToast>["toast"],
 ) {
-  // ApiError wraps the response body in .data; fall back for plain error objects.
   const payload = (err as { data?: unknown })?.data ?? err;
   const res = payload as { errors?: Record<string, string[]>; message?: string };
   if (res?.errors && typeof res.errors === "object") {
@@ -75,96 +72,108 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4 py-12">
-      <div className="w-full max-w-md bg-card border shadow-sm rounded-xl p-8 space-y-6">
-        <div className="space-y-2 text-center">
-          <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-4">
-            <Building2 className="w-6 h-6 text-primary" />
+    <div className="min-h-screen flex items-center justify-center bg-background p-6 py-12">
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 mb-8">
+          <div className="w-9 h-9 rounded-xl bg-primary flex items-center justify-center">
+            <Zap className="w-5 h-5 text-white" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">Create your organization</h1>
-          <p className="text-sm text-muted-foreground">Set up your workspace and invite your team</p>
+          <span className="text-lg font-bold text-foreground">Enterprise Platform</span>
         </div>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Full Name</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Jane Doe" autoComplete="name" {...field} data-testid="input-name" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Work Email</FormLabel>
-                  <FormControl>
-                    <Input placeholder="jane@company.com" autoComplete="email" {...field} data-testid="input-email" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="tenant_name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Organization Name <span className="text-muted-foreground">(optional)</span></FormLabel>
-                  <FormControl>
-                    <Input placeholder="Acme Corp" autoComplete="organization" {...field} data-testid="input-tenant" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Password</FormLabel>
-                  <FormControl>
-                    <Input type="password" autoComplete="new-password" {...field} data-testid="input-password" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="password_confirmation"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Confirm Password</FormLabel>
-                  <FormControl>
-                    <Input type="password" autoComplete="new-password" {...field} data-testid="input-password-confirm" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <Button type="submit" className="w-full" disabled={registerMutation.isPending} data-testid="button-submit">
-              {registerMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-              Create account <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
-          </form>
-        </Form>
+        <div className="mb-7">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Create your organization</h1>
+          <p className="text-sm text-muted-foreground mt-1">Set up your workspace and invite your team</p>
+        </div>
 
-        <div className="text-center text-sm text-muted-foreground pt-4 border-t">
+        <div className="bg-card border border-border rounded-xl p-6 shadow-sm">
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <div className="grid grid-cols-1 gap-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Full Name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Jane Doe" autoComplete="name" className="h-10 bg-background border-border" {...field} data-testid="input-name" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="tenant_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                        Organization Name <span className="normal-case text-muted-foreground/60">(optional)</span>
+                      </FormLabel>
+                      <FormControl>
+                        <Input placeholder="Acme Corp" autoComplete="organization" className="h-10 bg-background border-border" {...field} data-testid="input-tenant" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Work Email</FormLabel>
+                      <FormControl>
+                        <Input placeholder="jane@company.com" autoComplete="email" className="h-10 bg-background border-border" {...field} data-testid="input-email" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" autoComplete="new-password" className="h-10 bg-background border-border" {...field} data-testid="input-password" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="password_confirmation"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Confirm Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" autoComplete="new-password" className="h-10 bg-background border-border" {...field} data-testid="input-password-confirm" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <Button type="submit" className="w-full h-10 font-semibold mt-2" disabled={registerMutation.isPending} data-testid="button-submit">
+                {registerMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowRight className="w-4 h-4 mr-2" />}
+                Create account
+              </Button>
+            </form>
+          </Form>
+        </div>
+
+        <p className="text-center text-xs text-muted-foreground mt-5">
           Already have an account?{" "}
           <Link to="/login" className="text-primary font-medium hover:underline" data-testid="link-login">
             Sign in
           </Link>
-        </div>
+        </p>
       </div>
     </div>
   );
