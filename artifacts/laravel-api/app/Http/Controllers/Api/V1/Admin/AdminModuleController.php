@@ -114,7 +114,7 @@ class AdminModuleController extends Controller
             // Spatie throwing PermissionDoesNotExist when permission is missing.
             foreach (['view', 'create', 'edit', 'delete'] as $action) {
                 Permission::where('name', "{$module->slug}.{$action}")
-                    ->where('guard_name', 'web')
+                    ->where('guard_name', 'sanctum')
                     ->first()
                     ?->delete();
             }
@@ -256,7 +256,7 @@ class AdminModuleController extends Controller
     {
         foreach (['view', 'create', 'edit', 'delete'] as $action) {
             Permission::firstOrCreate(
-                ['name' => "{$slug}.{$action}", 'guard_name' => 'web'],
+                ['name' => "{$slug}.{$action}", 'guard_name' => 'sanctum'],
             );
         }
     }
