@@ -29,4 +29,13 @@ inject_env_var "PGPASSWORD"    "$PGPASSWORD"
 # Clear compiled config so new .env values are picked up
 php artisan config:clear --quiet
 
+# ── Production safety check ───────────────────────────────────────────────────
+# When running in production, validate that all required environment variables
+# are present before the server starts. This catches misconfigured deployments
+# early (on boot) rather than at the moment a user tries to log in.
+if [ "${APP_ENV:-local}" = "production" ]; then
+    echo "==> Running production environment checks..."
+    bash "$(dirname "$0")/scripts/pre-deploy-check.sh"
+fi
+
 exec php artisan serve --host=0.0.0.0 --port="${PORT:-8000}"
