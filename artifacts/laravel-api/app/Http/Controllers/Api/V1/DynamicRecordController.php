@@ -57,9 +57,16 @@ class DynamicRecordController extends Controller
         }
 
         // Standard Spatie permission check (tenant-scoped permissions loaded
-        // by ResolveTenantPermissions middleware before this controller runs)
-        if (! $user->hasPermissionTo("{$slug}.{$action}")) {
-            abort(403, "You don't have '{$slug}.{$action}' permission for this module.");
+        // by ResolveTenantPermissions middleware before this controller runs).
+        // Wrap in try/catch: Spatie throws PermissionDoesNotExist if the permission
+        // was never provisioned (e.g. stale tenant or manually-deleted permission).
+        // Both cases should be treated as 403, not a 500.
+        try {
+            if (! $user->hasPermissionTo("{$slug}.{$action}")) {
+                abort(403, "You don't have '{$slug}.{$action}' permission for this module.");
+            }
+        } catch (\Spatie\Permission\Exceptions\PermissionDoesNotExist) {
+            abort(403, "Module '{$slug}' does not have '{$action}' permission configured.");
         }
     }
 

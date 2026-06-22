@@ -137,7 +137,25 @@ function FieldDialog({ open, initial, onClose, onSave }: FieldDialogProps) {
   const [choices, setChoices]     = useState<string>(
     (initial?.options?.choices ?? []).join("\n"),
   );
+  const [minVal, setMinVal]       = useState<string>(
+    initial?.options?.min !== undefined ? String(initial.options.min) : "",
+  );
+  const [maxVal, setMaxVal]       = useState<string>(
+    initial?.options?.max !== undefined ? String(initial.options.max) : "",
+  );
+  const [moduleSlug, setModuleSlug] = useState<string>(
+    initial?.options?.module_slug ?? "",
+  );
   const [saving, setSaving]       = useState(false);
+
+  // Fetch modules list for the relation field type selector
+  const { data: modulesData } = useQuery({
+    queryKey: ["admin-modules-for-relation"],
+    queryFn:  fetchAdminModules,
+    staleTime: 60_000,
+    enabled:  type === "relation",
+  });
+  const availableModules = modulesData?.data ?? [];
 
   useEffect(() => {
     if (open) {
@@ -148,10 +166,15 @@ function FieldDialog({ open, initial, onClose, onSave }: FieldDialogProps) {
       setInList(initial?.show_in_list ?? true);
       setInForm(initial?.show_in_form ?? true);
       setChoices((initial?.options?.choices ?? []).join("\n"));
+      setMinVal(initial?.options?.min !== undefined ? String(initial.options.min) : "");
+      setMaxVal(initial?.options?.max !== undefined ? String(initial.options.max) : "");
+      setModuleSlug(initial?.options?.module_slug ?? "");
     }
   }, [open, initial]);
 
-  const needsChoices = type === "single_select" || type === "multi_select";
+  const needsChoices  = type === "single_select" || type === "multi_select";
+  const needsRange    = type === "number" || type === "decimal" || type === "currency";
+  const needsRelation = type === "relation";
 
   const autoName = (lbl: string) =>
     lbl.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]/g, "");
@@ -159,9 +182,19 @@ function FieldDialog({ open, initial, onClose, onSave }: FieldDialogProps) {
   const handleSave = async () => {
     if (!label.trim()) return;
     setSaving(true);
-    const opts: ModuleField["options"] = needsChoices
-      ? { choices: choices.split("\n").map((s) => s.trim()).filter(Boolean) }
-      : null;
+
+    let opts: ModuleField["options"] = null;
+    if (needsChoices) {
+      opts = { choices: choices.split("\n").map((s) => s.trim()).filter(Boolean) };
+    } else if (needsRange) {
+      opts = {};
+      if (minVal !== "") opts.min = Number(minVal);
+      if (maxVal !== "") opts.max = Number(maxVal);
+      if (Object.keys(opts).length === 0) opts = null;
+    } else if (needsRelation && moduleSlug) {
+      opts = { module_slug: moduleSlug };
+    }
+
     try {
       await onSave({
         name:         name || autoName(label),
@@ -226,6 +259,7 @@ function FieldDialog({ open, initial, onClose, onSave }: FieldDialogProps) {
             </Select>
           </div>
 
+          {/* Choices for select fields */}
           {needsChoices && (
             <div className="space-y-1.5">
               <Label className="text-xs">Choices (one per line)</Label>
@@ -236,6 +270,55 @@ function FieldDialog({ open, initial, onClose, onSave }: FieldDialogProps) {
                 rows={4}
                 className="text-sm font-mono"
               />
+            </div>
+          )}
+
+          {/* Min / Max for numeric fields */}
+          {needsRange && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Range Constraints (optional)</Label>
+              <div className="flex gap-2">
+                <div className="flex-1 space-y-1">
+                  <p className="text-[10px] text-muted-foreground">Min</p>
+                  <Input
+                    type="number"
+                    placeholder="No minimum"
+                    value={minVal}
+                    onChange={(e) => setMinVal(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="flex-1 space-y-1">
+                  <p className="text-[10px] text-muted-foreground">Max</p>
+                  <Input
+                    type="number"
+                    placeholder="No maximum"
+                    value={maxVal}
+                    onChange={(e) => setMaxVal(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Target module for relation fields */}
+          {needsRelation && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Target Module</Label>
+              <Select value={moduleSlug} onValueChange={setModuleSlug}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a module…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableModules.map((m) => (
+                    <SelectItem key={m.slug} value={m.slug}>{m.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                The module whose records this field links to.
+              </p>
             </div>
           )}
 

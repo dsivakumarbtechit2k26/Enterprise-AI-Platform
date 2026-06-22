@@ -71,8 +71,8 @@ class DynamicModule extends Model
 
             // Type-specific validation
             match ($field->field_type) {
-                'number'  => is_numeric($value) ?: ($errors[$field->name][] = "{$field->label} must be a number."),
-                'decimal', 'currency' => is_numeric($value) ?: ($errors[$field->name][] = "{$field->label} must be a number."),
+                'number'            => $this->validateNumeric($field, $value, $errors),
+                'decimal', 'currency' => $this->validateNumeric($field, $value, $errors),
                 'date'    => (bool) strtotime((string) $value) ?: ($errors[$field->name][] = "{$field->label} must be a valid date."),
                 'datetime'=> (bool) strtotime((string) $value) ?: ($errors[$field->name][] = "{$field->label} must be a valid date/time."),
                 'single_select' => $this->validateSingleSelect($field, $value, $errors),
@@ -82,6 +82,23 @@ class DynamicModule extends Model
         }
 
         return $errors;
+    }
+
+    private function validateNumeric(DynamicModuleField $field, mixed $value, array &$errors): void
+    {
+        if (! is_numeric($value)) {
+            $errors[$field->name][] = "{$field->label} must be a number.";
+            return;
+        }
+        $num = (float) $value;
+        $min = isset($field->options['min']) ? (float) $field->options['min'] : null;
+        $max = isset($field->options['max']) ? (float) $field->options['max'] : null;
+        if ($min !== null && $num < $min) {
+            $errors[$field->name][] = "{$field->label} must be at least {$min}.";
+        }
+        if ($max !== null && $num > $max) {
+            $errors[$field->name][] = "{$field->label} must be at most {$max}.";
+        }
     }
 
     private function validateSingleSelect(DynamicModuleField $field, mixed $value, array &$errors): void
