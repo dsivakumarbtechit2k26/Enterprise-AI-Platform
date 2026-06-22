@@ -209,7 +209,14 @@ export async function fetchModuleDetail(slug: string): Promise<{ data: DynamicMo
 
 export async function fetchRecords(
   slug: string,
-  params?: { search?: string; page?: number; per_page?: number; sort_field?: string; sort_dir?: string },
+  params?: {
+    search?: string;
+    page?: number;
+    per_page?: number;
+    sort_field?: string;
+    sort_dir?: string;
+    filters?: Record<string, string>;
+  },
 ): Promise<PaginatedRecords> {
   const qs = new URLSearchParams();
   if (params?.search)     qs.set("search", params.search);
@@ -217,8 +224,38 @@ export async function fetchRecords(
   if (params?.per_page)   qs.set("per_page", String(params.per_page));
   if (params?.sort_field) qs.set("sort_field", params.sort_field);
   if (params?.sort_dir)   qs.set("sort_dir", params.sort_dir);
+  if (params?.filters) {
+    for (const [k, v] of Object.entries(params.filters)) {
+      if (v) qs.set(`filters[${k}]`, v);
+    }
+  }
   const q = qs.toString();
   return apiFetch(`/m/${slug}/records${q ? `?${q}` : ""}`);
+}
+
+export async function bulkDeleteRecords(slug: string, ids: number[]): Promise<{ deleted: number }> {
+  return apiFetch(`/m/${slug}/records`, {
+    method: "DELETE",
+    body: JSON.stringify({ ids }),
+  });
+}
+
+/** Returns the absolute URL for CSV export (caller passes token via auth header separately). */
+export function buildExportUrl(
+  slug: string,
+  params?: { search?: string; sort_field?: string; sort_dir?: string; filters?: Record<string, string> },
+): string {
+  const qs = new URLSearchParams();
+  if (params?.search)     qs.set("search", params.search);
+  if (params?.sort_field) qs.set("sort_field", params.sort_field);
+  if (params?.sort_dir)   qs.set("sort_dir", params.sort_dir);
+  if (params?.filters) {
+    for (const [k, v] of Object.entries(params.filters)) {
+      if (v) qs.set(`filters[${k}]`, v);
+    }
+  }
+  const q = qs.toString();
+  return `/api/v1/m/${slug}/records/export${q ? `?${q}` : ""}`;
 }
 
 export async function fetchModuleStats(slug: string): Promise<{ data: ModuleStats }> {

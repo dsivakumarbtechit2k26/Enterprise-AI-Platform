@@ -11,67 +11,113 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class DynamicRecordController extends Controller
 {
-    /**
-     * Resolve module by slug and guard that it is enabled.
-     */
+    // ── Module resolver ───────────────────────────────────────────────────────
+
     private function resolveModule(string $slug): DynamicModule
     {
-        return DynamicModule::with('fields')->where('slug', $slug)->where('is_enabled', true)->firstOrFail();
+        return DynamicModule::with('fields')
+            ->where('slug', $slug)
+            ->where('is_enabled', true)
+            ->firstOrFail();
     }
 
-    /**
-     * GET /api/v1/m/{slug}/records
-     */
-    public function index(Request $request, string $slug): JsonResponse
+    // ── Per-module authorization ───────────────────────────────────────────────
+    //
+    // Each enabled module auto-provisions {slug}.view/.create/.edit/.delete
+    // permissions (AdminModuleController::ensureModulePermissions).
+    //
+    // Bypass rules (ordered):
+    //   1. Unauthenticated → 401
+    //   2. Central / platform scope (no real tenant) → always allow
+    //   3. User has super-admin or platform-admin role → always allow
+    //   4. Standard Spatie permission check via hasPermissionTo()
+
+    private function authorizeAction(string $slug, string $action): void
     {
-        $module    = $this->resolveModule($slug);
-        $tenantId  = $this->tenantId();
+        $user = Auth::user();
 
-        $query = DynamicModuleRecord::where('module_id', $module->id)
-            ->where('tenant_id', $tenantId);
+        if (! $user) {
+            abort(401, 'Unauthenticated.');
+        }
 
-        // ── Search across all text-like fields ──────────────────────────────
+        $tenantId = $this->tenantId();
+
+        // Platform-admin or central scope — no tenant subscription check needed
+        if (empty($tenantId) || $tenantId === 'central') {
+            return;
+        }
+
+        // Roles that bypass module-level ACL
+        if ($user->hasRole(['super-admin', 'platform-admin'])) {
+            return;
+        }
+
+        // Standard Spatie permission check (tenant-scoped permissions loaded
+        // by ResolveTenantPermissions middleware before this controller runs)
+        if (! $user->hasPermissionTo("{$slug}.{$action}")) {
+            abort(403, "You don't have '{$slug}.{$action}' permission for this module.");
+        }
+    }
+
+    // ── Shared filter + sort application ──────────────────────────────────────
+
+    private function applyFiltersAndSort(
+        Request $request,
+        \Illuminate\Database\Eloquent\Builder $query,
+        DynamicModule $module,
+    ): void {
+        // Full-text search across all JSONB data
         if ($search = $request->input('search')) {
             $query->where(function ($q) use ($search) {
                 $q->whereRaw("data::text ILIKE ?", ["%{$search}%"]);
             });
         }
 
-        // ── Sort ─────────────────────────────────────────────────────────────
+        // Field-specific filters: ?filters[field_name]=value
+        // Only applied for fields that actually belong to this module.
+        if ($rawFilters = $request->input('filters')) {
+            foreach ((array) $rawFilters as $fieldName => $value) {
+                if ($value === null || $value === '') {
+                    continue;
+                }
+                $cleanField = preg_replace('/[^a-zA-Z0-9_-]/', '', (string) $fieldName);
+                if (! $module->fields->firstWhere('name', $cleanField)) {
+                    continue;
+                }
+                $query->whereRaw(
+                    "lower(data->>'{$cleanField}') LIKE ?",
+                    ['%' . mb_strtolower((string) $value) . '%'],
+                );
+            }
+        }
+
+        // Sort — default: created_at DESC
         $sortField = $request->input('sort_field');
         $sortDir   = $request->input('sort_dir', 'desc') === 'asc' ? 'asc' : 'desc';
 
         if ($sortField && $sortField !== 'created_at') {
-            $query->orderByRaw("data->>'??' {$sortDir}", [$sortField]);
+            // Validate against module fields; names are alpha_dash (enforced at creation)
+            $validField = $module->fields->firstWhere('name', $sortField);
+            if ($validField) {
+                $clean = preg_replace('/[^a-zA-Z0-9_-]/', '', $sortField);
+                $query->orderByRaw("(data->>'{$clean}') {$sortDir} NULLS LAST");
+            } else {
+                $query->orderBy('created_at', $sortDir);
+            }
         } else {
             $query->orderBy('created_at', $sortDir);
         }
-
-        $perPage   = min((int) $request->input('per_page', 20), 100);
-        $paginator = $query->paginate($perPage);
-
-        $items = collect($paginator->items())->map(fn ($r) => $this->formatRecord($r));
-
-        return response()->json([
-            'data' => $items,
-            'meta' => [
-                'current_page' => $paginator->currentPage(),
-                'last_page'    => $paginator->lastPage(),
-                'per_page'     => $paginator->perPage(),
-                'total'        => $paginator->total(),
-            ],
-            'module' => $this->formatModuleMeta($module),
-        ]);
     }
 
-    /**
-     * GET /api/v1/m/{slug}/stats
-     */
+    // ── GET /api/v1/m/{slug}/stats ─────────────────────────────────────────────
+
     public function stats(string $slug): JsonResponse
     {
+        $this->authorizeAction($slug, 'view');
         $module   = $this->resolveModule($slug);
         $tenantId = $this->tenantId();
 
@@ -98,18 +144,86 @@ class DynamicRecordController extends Controller
 
         return response()->json([
             'data' => [
-                'total'      => $total,
-                'this_week'  => $thisWeek,
-                'daily_chart'=> $chart,
+                'total'       => $total,
+                'this_week'   => $thisWeek,
+                'daily_chart' => $chart,
             ],
         ]);
     }
 
-    /**
-     * POST /api/v1/m/{slug}/records
-     */
+    // ── GET /api/v1/m/{slug}/records ──────────────────────────────────────────
+
+    public function index(Request $request, string $slug): JsonResponse
+    {
+        $this->authorizeAction($slug, 'view');
+        $module   = $this->resolveModule($slug);
+        $tenantId = $this->tenantId();
+
+        $query = DynamicModuleRecord::where('module_id', $module->id)
+            ->where('tenant_id', $tenantId);
+
+        $this->applyFiltersAndSort($request, $query, $module);
+
+        $perPage   = min((int) $request->input('per_page', 20), 100);
+        $paginator = $query->paginate($perPage);
+
+        $items = collect($paginator->items())->map(fn ($r) => $this->formatRecord($r));
+
+        return response()->json([
+            'data' => $items,
+            'meta' => [
+                'current_page' => $paginator->currentPage(),
+                'last_page'    => $paginator->lastPage(),
+                'per_page'     => $paginator->perPage(),
+                'total'        => $paginator->total(),
+            ],
+            'module' => $this->formatModuleMeta($module),
+        ]);
+    }
+
+    // ── GET /api/v1/m/{slug}/records/export (CSV) ─────────────────────────────
+    // Streams a CSV with the same search/filter/sort params as the list.
+    // Capped at 10 000 rows to prevent memory exhaustion.
+
+    public function export(Request $request, string $slug): StreamedResponse
+    {
+        $this->authorizeAction($slug, 'view');
+        $module   = $this->resolveModule($slug);
+        $tenantId = $this->tenantId();
+
+        $query = DynamicModuleRecord::where('module_id', $module->id)
+            ->where('tenant_id', $tenantId);
+
+        $this->applyFiltersAndSort($request, $query, $module);
+
+        $records    = $query->limit(10_000)->get();
+        $allFields  = $module->fields->sortBy('sort_order');
+        $filename   = "{$slug}-records-" . now()->format('Y-m-d') . ".csv";
+
+        return response()->streamDownload(function () use ($records, $allFields) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, array_merge(['ID'], $allFields->pluck('label')->toArray(), ['Created At']));
+            foreach ($records as $record) {
+                $row = [$record->id];
+                foreach ($allFields as $field) {
+                    $val = $record->data[$field->name] ?? '';
+                    $row[] = is_array($val) ? implode(', ', $val) : (string) $val;
+                }
+                $row[] = $record->created_at->format('Y-m-d H:i:s');
+                fputcsv($out, $row);
+            }
+            fclose($out);
+        }, $filename, [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ]);
+    }
+
+    // ── POST /api/v1/m/{slug}/records ──────────────────────────────────────────
+
     public function store(Request $request, string $slug): JsonResponse
     {
+        $this->authorizeAction($slug, 'create');
         $module   = $this->resolveModule($slug);
         $tenantId = $this->tenantId();
 
@@ -130,11 +244,11 @@ class DynamicRecordController extends Controller
         return response()->json(['data' => $this->formatRecord($record)], 201);
     }
 
-    /**
-     * GET /api/v1/m/{slug}/records/{id}
-     */
+    // ── GET /api/v1/m/{slug}/records/{id} ─────────────────────────────────────
+
     public function show(string $slug, int $id): JsonResponse
     {
+        $this->authorizeAction($slug, 'view');
         $module   = $this->resolveModule($slug);
         $tenantId = $this->tenantId();
 
@@ -148,11 +262,11 @@ class DynamicRecordController extends Controller
         ]);
     }
 
-    /**
-     * PUT /api/v1/m/{slug}/records/{id}
-     */
+    // ── PUT /api/v1/m/{slug}/records/{id} ─────────────────────────────────────
+
     public function update(Request $request, string $slug, int $id): JsonResponse
     {
+        $this->authorizeAction($slug, 'edit');
         $module   = $this->resolveModule($slug);
         $tenantId = $this->tenantId();
 
@@ -172,11 +286,11 @@ class DynamicRecordController extends Controller
         return response()->json(['data' => $this->formatRecord($record->fresh())]);
     }
 
-    /**
-     * DELETE /api/v1/m/{slug}/records/{id}
-     */
+    // ── DELETE /api/v1/m/{slug}/records/{id} ──────────────────────────────────
+
     public function destroy(string $slug, int $id): JsonResponse
     {
+        $this->authorizeAction($slug, 'delete');
         $module   = $this->resolveModule($slug);
         $tenantId = $this->tenantId();
 
@@ -188,12 +302,32 @@ class DynamicRecordController extends Controller
         return response()->json(['message' => 'Record deleted.']);
     }
 
+    // ── DELETE /api/v1/m/{slug}/records  (bulk) ────────────────────────────────
+
+    public function bulkDestroy(Request $request, string $slug): JsonResponse
+    {
+        $this->authorizeAction($slug, 'delete');
+        $module   = $this->resolveModule($slug);
+        $tenantId = $this->tenantId();
+
+        $validated = $request->validate([
+            'ids'   => ['required', 'array', 'min:1', 'max:500'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $deleted = DynamicModuleRecord::where('module_id', $module->id)
+            ->where('tenant_id', $tenantId)
+            ->whereIn('id', $validated['ids'])
+            ->delete();
+
+        return response()->json(['deleted' => $deleted]);
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private function tenantId(): string
     {
-        // active_tenant_id is set by ResolveTenantPermissions middleware
-        return request()->attributes->get('active_tenant_id', '');
+        return (string) (request()->attributes->get('active_tenant_id', ''));
     }
 
     private function formatRecord(DynamicModuleRecord $record): array

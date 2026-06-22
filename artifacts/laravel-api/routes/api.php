@@ -245,12 +245,14 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['auth:sanctum', 'account.not.locked', 'tenant.permissions'])
         ->prefix('m/{slug}')
         ->group(function () {
-            Route::get('/stats',           [DynamicRecordController::class, 'stats'])->name('api.v1.m.stats');
-            Route::get('/records',         [DynamicRecordController::class, 'index'])->name('api.v1.m.records.index');
-            Route::post('/records',        [DynamicRecordController::class, 'store'])->name('api.v1.m.records.store');
-            Route::get('/records/{id}',    [DynamicRecordController::class, 'show'])->name('api.v1.m.records.show');
-            Route::put('/records/{id}',    [DynamicRecordController::class, 'update'])->name('api.v1.m.records.update');
-            Route::delete('/records/{id}', [DynamicRecordController::class, 'destroy'])->name('api.v1.m.records.destroy');
+            Route::get('/stats',              [DynamicRecordController::class, 'stats'])->name('api.v1.m.stats');
+            Route::get('/records/export',     [DynamicRecordController::class, 'export'])->name('api.v1.m.records.export');
+            Route::get('/records',            [DynamicRecordController::class, 'index'])->name('api.v1.m.records.index');
+            Route::post('/records',           [DynamicRecordController::class, 'store'])->name('api.v1.m.records.store');
+            Route::delete('/records',         [DynamicRecordController::class, 'bulkDestroy'])->name('api.v1.m.records.bulk-destroy');
+            Route::get('/records/{id}',       [DynamicRecordController::class, 'show'])->name('api.v1.m.records.show');
+            Route::put('/records/{id}',       [DynamicRecordController::class, 'update'])->name('api.v1.m.records.update');
+            Route::delete('/records/{id}',    [DynamicRecordController::class, 'destroy'])->name('api.v1.m.records.destroy');
         });
 
     // ── Stripe webhook — no auth, Cashier verifies signature ─────────────────

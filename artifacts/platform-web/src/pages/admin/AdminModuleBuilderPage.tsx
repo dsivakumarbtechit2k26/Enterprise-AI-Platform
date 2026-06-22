@@ -49,6 +49,7 @@ const FIELD_TYPES: { value: FieldType; label: string }[] = [
   { value: "single_select", label: "Single Select" },
   { value: "multi_select",  label: "Multi Select" },
   { value: "user_picker",   label: "User Picker" },
+  { value: "relation",      label: "Relation (Link to Module)" },
 ];
 
 // ── Sortable field row ────────────────────────────────────────────────────────

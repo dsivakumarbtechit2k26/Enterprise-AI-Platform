@@ -95,9 +95,13 @@ class AdminModuleController extends Controller
         $module = DynamicModule::findOrFail($id);
 
         DB::connection('central')->transaction(function () use ($module) {
-            // Remove auto-created permissions
+            // Remove auto-created permissions — use where()->first() to avoid
+            // Spatie throwing PermissionDoesNotExist when permission is missing.
             foreach (['view', 'create', 'edit', 'delete'] as $action) {
-                Permission::findByName("{$module->slug}.{$action}", 'web')?->delete();
+                Permission::where('name', "{$module->slug}.{$action}")
+                    ->where('guard_name', 'web')
+                    ->first()
+                    ?->delete();
             }
             $module->delete();
         });
