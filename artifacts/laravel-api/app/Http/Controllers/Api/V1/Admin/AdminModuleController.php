@@ -72,6 +72,20 @@ class AdminModuleController extends Controller
         return response()->json(['data' => $this->formatModule($module, true)]);
     }
 
+    /**
+     * GET /admin/modules/{id}/fields
+     * Dedicated fields index for API parity — returns the ordered fields for a
+     * given module without the full module payload. Useful for lean field-only
+     * consumers (e.g. field-permission forms, external integrations).
+     */
+    public function listFields(int $id): JsonResponse
+    {
+        $module = DynamicModule::findOrFail($id);
+        $fields = $module->fields()->orderBy('sort_order')->get();
+
+        return response()->json(['data' => $fields]);
+    }
+
     public function update(Request $request, int $id): JsonResponse
     {
         $module = DynamicModule::findOrFail($id);

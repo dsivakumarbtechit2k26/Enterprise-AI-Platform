@@ -36,8 +36,10 @@ Route::prefix('v1')->group(function () {
     Route::get('/version', [HealthController::class, 'version'])->name('api.v1.version');
     Route::get('/platform/plans', [PlatformController::class, 'plans'])->name('api.v1.platform.plans');
 
-    // Enabled modules list — requires auth so tenant context is available
-    Route::middleware(['auth:sanctum', 'account.not.locked'])->group(function () {
+    // Enabled modules list — requires auth + tenant context so the sidebar
+    // only shows modules the active tenant has access to, and so quota is
+    // enforced consistently with all other authenticated tenant endpoints.
+    Route::middleware(['auth:sanctum', 'account.not.locked', 'tenant.permissions', 'check_quota'])->group(function () {
         Route::get('/platform/modules', [PlatformController::class, 'modules'])->name('api.v1.platform.modules');
         Route::get('/platform/modules/{slug}', [PlatformController::class, 'moduleDetail'])->name('api.v1.platform.modules.show');
     });
@@ -249,7 +251,10 @@ Route::prefix('v1')->group(function () {
         ->name('api.v1.billing.invoices.serve');
 
     // ── Dynamic module records — authenticated tenant routes ──────────────────
-    Route::middleware(['auth:sanctum', 'account.not.locked', 'tenant.permissions'])
+    // check_quota is included to enforce per-tenant API call / usage limits
+    // on all dynamic module record operations, consistent with the project-wide
+    // policy that every authenticated tenant data endpoint enforces quota.
+    Route::middleware(['auth:sanctum', 'account.not.locked', 'tenant.permissions', 'check_quota'])
         ->prefix('m/{slug}')
         ->group(function () {
             Route::get('/stats',              [DynamicRecordController::class, 'stats'])->name('api.v1.m.stats');
@@ -340,6 +345,7 @@ Route::prefix('v1')->group(function () {
             Route::put('/modules/{id}',                                    [AdminModuleController::class, 'update'])->name('api.v1.admin.modules.update');
             Route::delete('/modules/{id}',                                 [AdminModuleController::class, 'destroy'])->name('api.v1.admin.modules.destroy');
             Route::patch('/modules/{id}/toggle',                           [AdminModuleController::class, 'toggle'])->name('api.v1.admin.modules.toggle');
+            Route::get('/modules/{id}/fields',                             [AdminModuleController::class, 'listFields'])->name('api.v1.admin.modules.fields.index');
             Route::post('/modules/{id}/fields',                            [AdminModuleController::class, 'storeField'])->name('api.v1.admin.modules.fields.store');
             Route::put('/modules/{id}/fields/{fieldId}',                   [AdminModuleController::class, 'updateField'])->name('api.v1.admin.modules.fields.update');
             Route::delete('/modules/{id}/fields/{fieldId}',                [AdminModuleController::class, 'destroyField'])->name('api.v1.admin.modules.fields.destroy');
