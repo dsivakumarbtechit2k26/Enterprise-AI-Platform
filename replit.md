@@ -36,6 +36,27 @@ _Describe the high-level user-facing capabilities of this app once they exist._
 
 _Populate as you build — explicit user instructions worth remembering across sessions._
 
+## Platform Admin Credentials
+
+The platform-admin user (used to access `/admin`) is seeded by `PlatformAdminSeeder`.
+Credentials are controlled by env vars — set them before going to production:
+
+| Env var                  | Default                  | Purpose              |
+|--------------------------|--------------------------|----------------------|
+| `PLATFORM_ADMIN_EMAIL`   | `admin@platform.local`   | Admin login email    |
+| `PLATFORM_ADMIN_PASSWORD`| `ChangeMe123!`           | Admin login password |
+| `PLATFORM_ADMIN_NAME`    | `Platform Admin`         | Admin display name   |
+
+To create or reset the admin user:
+```bash
+# Must run RbacSeeder first if it hasn't been run
+php artisan db:seed --class=RbacSeeder
+php artisan db:seed --class=PlatformAdminSeeder
+```
+
+The seeder is idempotent — safe to re-run. It uses `updateOrCreate` so it won't
+duplicate the user, but it will reset the password to the env-var value.
+
 ## Gotchas
 
 _Populate as you build — sharp edges, "always run X before Y" rules._
