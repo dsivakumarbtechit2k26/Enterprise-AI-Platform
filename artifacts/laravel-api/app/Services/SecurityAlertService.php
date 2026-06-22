@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Mail\SuspiciousActivityAlert;
+use App\Models\AuditLog;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 
@@ -112,8 +114,44 @@ class SecurityAlertService
         return $fromAddress ?: null;
     }
 
+    /**
+     * Persist a security.alert.fired audit log entry then attempt email delivery.
+     *
+     * The audit record is written before the email attempt so that:
+     *   - The alert is always traceable even if mail delivery fails.
+     *   - Admins can review history in the console without relying on email archives.
+     *
+     * Eloquent model instances in $context are serialized to a safe scalar
+     * snapshot (id, email, name) so the JSON column stays readable.
+     */
     private function send(string $to, string $alertType, array $context): void
     {
+        // Extract IDs for the audit log before sanitising the context array.
+        $user   = $context['user']   ?? null;
+        $tenant = $context['tenant'] ?? null;
+
+        $actorId   = $user   instanceof User   ? $user->id   : null;
+        $tenantId  = $tenant instanceof Tenant ? (string) $tenant->id : null;
+        $ipAddress = isset($context['ip_address']) && is_string($context['ip_address'])
+            ? $context['ip_address']
+            : null;
+
+        // Flatten Eloquent models to scalar snapshots so new_values is JSON-safe.
+        $safeContext = array_map(
+            fn ($v) => $v instanceof Model
+                ? array_filter(['id' => $v->getKey(), 'name' => $v->name ?? null, 'email' => $v->email ?? null])
+                : $v,
+            $context,
+        );
+
+        AuditLog::record(
+            event: 'security.alert.fired',
+            newValues: array_merge(['alert_type' => $alertType, 'notified_email' => $to], $safeContext),
+            tenantId: $tenantId,
+            actorId: $actorId,
+            ipAddress: $ipAddress,
+        );
+
         try {
             Mail::to($to)->send(new SuspiciousActivityAlert($alertType, $context));
             Log::info('SecurityAlertService: alert sent', [

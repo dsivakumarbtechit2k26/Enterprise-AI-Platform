@@ -236,6 +236,13 @@ const router = createBrowserRouter(
                   },
                 },
                 {
+                  path: "security-alerts",
+                  lazy: async () => {
+                    const { default: Page } = await import("@/pages/admin/AdminSecurityAlertsPage");
+                    return { Component: Page };
+                  },
+                },
+                {
                   path: "settings",
                   lazy: async () => {
                     const { default: Page } = await import("@/pages/admin/AdminSettingsPage");

@@ -75,6 +75,8 @@ const EVENT_LABELS: Record<string, string> = {
   // Support
   "support.ticket.created": "Support Ticket Created",
   "support.ticket.closed":  "Support Ticket Closed",
+  // Security alerts
+  "security.alert.fired": "Security Alert Fired",
 };
 
 function eventLabel(event: string): string {
@@ -88,7 +90,7 @@ function eventLabel(event: string): string {
 
 // ── Category badge config ─────────────────────────────────────────────────────
 
-type Category = "auth" | "tenant" | "billing" | "rbac" | "user" | "settings" | "support" | "other";
+type Category = "auth" | "tenant" | "billing" | "rbac" | "user" | "settings" | "support" | "security" | "other";
 
 const CATEGORY_STYLES: Record<Category, { bg: string; text: string; ring: string; label: string }> = {
   auth:     { bg: "bg-blue-500/15",   text: "text-blue-300",   ring: "ring-blue-500/30",   label: "Auth"     },
@@ -98,6 +100,7 @@ const CATEGORY_STYLES: Record<Category, { bg: string; text: string; ring: string
   user:     { bg: "bg-sky-500/15",    text: "text-sky-300",    ring: "ring-sky-500/30",    label: "User"     },
   settings: { bg: "bg-slate-500/15",  text: "text-slate-300",  ring: "ring-slate-500/30",  label: "Settings" },
   support:  { bg: "bg-rose-500/15",   text: "text-rose-300",   ring: "ring-rose-500/30",   label: "Support"  },
+  security: { bg: "bg-red-500/15",    text: "text-red-300",    ring: "ring-red-500/30",    label: "Security" },
   other:    { bg: "bg-slate-700/30",  text: "text-slate-400",  ring: "ring-slate-600/30",  label: "Other"    },
 };
 
@@ -113,6 +116,7 @@ const PREFIX_TO_CATEGORY: [string, Category][] = [
   ["user",              "user"],
   ["platform_settings", "settings"],
   ["support",           "support"],
+  ["security",          "security"],
 ];
 
 function getCategory(event: string): Category {
@@ -146,6 +150,7 @@ const EVENT_CATEGORIES: { label: string; prefixes: string[]; category: Category 
   { label: "User",     prefixes: ["user"],                                          category: "user"     },
   { label: "Settings", prefixes: ["platform_settings"],                             category: "settings" },
   { label: "Support",  prefixes: ["support"],                                       category: "support"  },
+  { label: "Security", prefixes: ["security"],                                      category: "security" },
 ];
 
 // ── Row shape ─────────────────────────────────────────────────────────────────
