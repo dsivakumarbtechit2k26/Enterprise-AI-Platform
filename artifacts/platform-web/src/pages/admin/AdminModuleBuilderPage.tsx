@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { DynamicIcon, AVAILABLE_ICONS } from "@/components/modules/DynamicIcon";
 import {
-  createModule, updateModule, fetchAdminModule,
+  createModule, updateModule, fetchAdminModule, fetchAdminModules,
   createField, updateField, deleteField, reorderFields,
   type DynamicModule, type ModuleField, type FieldType,
 } from "@/lib/moduleApi";

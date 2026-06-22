@@ -32,6 +32,7 @@ class AdminModuleController extends Controller
             $query->where('is_enabled', filter_var($request->input('is_enabled'), FILTER_VALIDATE_BOOLEAN));
         }
 
+        $query->withCount(['records', 'fields']);
         $modules = $query->orderBy('name')->get()->map(fn ($m) => $this->formatModule($m, false));
 
         return response()->json(['data' => $modules]);
@@ -203,6 +204,7 @@ class AdminModuleController extends Controller
             'is_enabled'    => $module->is_enabled,
             'settings'      => $module->settings,
             'records_count' => $module->records_count ?? null,
+            'fields_count'  => $module->fields_count ?? null,
             'created_at'    => $module->created_at,
             'updated_at'    => $module->updated_at,
         ];
