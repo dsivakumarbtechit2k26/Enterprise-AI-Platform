@@ -19,14 +19,18 @@ class TeamMembersController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
-        $tenantId = $request->header('X-Tenant-ID');
+        // Prefer the middleware-resolved tenant ID (set by ResolveTenantPermissions /
+        // SetTenantContext) so this endpoint is consistent with every other controller.
+        // Fall back to the raw header for clients that omit middleware-level processing.
+        $tenantId = $request->attributes->get('active_tenant_id')
+                 ?? $request->header('X-Tenant-ID');
 
         if (! $tenantId) {
             return response()->json([
                 'type'   => 'https://platform.local/errors/no-tenant-context',
                 'title'  => 'No Tenant Context',
                 'status' => 400,
-                'detail' => 'X-Tenant-ID header is required.',
+                'detail' => 'No active tenant context. Include X-Tenant-ID header.',
             ], 400);
         }
 

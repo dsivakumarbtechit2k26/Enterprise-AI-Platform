@@ -344,57 +344,95 @@ export function AppShell() {
   );
 
   // ── Sidebar footer ────────────────────────────────────────────────────────
+  // Compact: theme toggle · collapse toggle · user avatar (opens quick menu)
+  // No name/email text — user identity lives in the top-right header menu.
 
   const sidebarFooter = (
-    <div className="shrink-0 border-t border-[hsl(var(--sidebar-border))] p-3">
-      <div className={`flex items-center ${sidebarCollapsed ? "flex-col gap-2" : "gap-2"}`}>
-        {/* Theme toggle */}
-        <Tooltip>
-          <TooltipTrigger asChild>
+    <div className="shrink-0 border-t border-[hsl(var(--sidebar-border))] px-2.5 py-2">
+      <div className={`flex items-center gap-1 ${sidebarCollapsed ? "flex-col" : "justify-between"}`}>
+
+        <div className={`flex items-center gap-1 ${sidebarCollapsed ? "flex-col" : ""}`}>
+          {/* Theme toggle */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 rounded-md text-[hsl(var(--sidebar-muted-foreground))] hover:text-[hsl(var(--sidebar-foreground))] hover:bg-[hsl(var(--sidebar-accent))]"
+                onClick={toggleTheme}
+                aria-label="Toggle theme"
+              >
+                {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{isDark ? "Light mode" : "Dark mode"}</TooltipContent>
+          </Tooltip>
+
+          {/* Collapse toggle */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 shrink-0 rounded-md text-[hsl(var(--sidebar-muted-foreground))] hover:text-[hsl(var(--sidebar-foreground))] hover:bg-[hsl(var(--sidebar-accent))]"
+                onClick={() => setSidebarCollapsed((c) => !c)}
+                aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                {sidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">{sidebarCollapsed ? "Expand" : "Collapse"}</TooltipContent>
+          </Tooltip>
+        </div>
+
+        {/* User avatar → compact quick-action menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 text-[hsl(var(--sidebar-muted-foreground))] hover:text-[hsl(var(--sidebar-foreground))] hover:bg-[hsl(var(--sidebar-accent))]"
-              onClick={toggleTheme}
-              aria-label="Toggle theme"
+              className="h-8 w-8 shrink-0 rounded-full p-0 ring-offset-[hsl(var(--sidebar))] hover:ring-2 hover:ring-primary/30 transition-all"
+              aria-label="User menu"
             >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              <Avatar className="h-7 w-7 border border-[hsl(var(--sidebar-border))]">
+                <AvatarImage src={user?.avatar ?? undefined} />
+                <AvatarFallback className="text-[11px] font-semibold bg-primary/15 text-primary">
+                  {user?.name ? getInitials(user.name) : "U"}
+                </AvatarFallback>
+              </Avatar>
             </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">{isDark ? "Light mode" : "Dark mode"}</TooltipContent>
-        </Tooltip>
-
-        {/* Collapse toggle */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 text-[hsl(var(--sidebar-muted-foreground))] hover:text-[hsl(var(--sidebar-foreground))] hover:bg-[hsl(var(--sidebar-accent))]"
-              onClick={() => setSidebarCollapsed((c) => !c)}
-              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            side="top"
+            align={sidebarCollapsed ? "center" : "end"}
+            sideOffset={8}
+            className="w-56"
+          >
+            <DropdownMenuLabel className="font-normal py-2.5 px-3">
+              <p className="text-sm font-semibold leading-none truncate">{user?.name ?? "…"}</p>
+              <p className="text-xs text-muted-foreground mt-1 leading-none truncate">{user?.email}</p>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link to="/settings/profile" className="cursor-pointer">
+                <UserCircle className="w-4 h-4 mr-2" /> Profile
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link to="/settings/billing" className="cursor-pointer">
+                <CreditCard className="w-4 h-4 mr-2" /> Billing
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive cursor-pointer"
+              onClick={handleLogout}
             >
-              {sidebarCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right">{sidebarCollapsed ? "Expand" : "Collapse"}</TooltipContent>
-        </Tooltip>
+              <LogOut className="w-4 h-4 mr-2" /> Log out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-        {/* User avatar (only when expanded) */}
-        {!sidebarCollapsed && (
-          <div className="flex items-center gap-2 flex-1 min-w-0 ml-1">
-            <Avatar className="h-7 w-7 shrink-0 border border-[hsl(var(--sidebar-border))]">
-              <AvatarImage src={user?.avatar ?? undefined} />
-              <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                {user?.name ? getInitials(user.name) : "U"}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold text-[hsl(var(--sidebar-foreground))] truncate leading-tight">{user?.name ?? "…"}</p>
-              <p className="text-[10px] text-[hsl(var(--sidebar-muted-foreground))] truncate leading-tight">{user?.email}</p>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

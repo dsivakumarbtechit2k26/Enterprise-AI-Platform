@@ -152,6 +152,22 @@ class RoleController extends Controller
         return response()->json(['message' => 'Role deleted.']);
     }
 
+    // ── List users with this role ─────────────────────────────────────────────
+
+    public function listUsers(Request $request, int $roleId): JsonResponse
+    {
+        $teamId = $request->attributes->get('active_tenant_id');
+        $role   = $this->findRoleForRead($roleId, $teamId);
+        $team   = $teamId ?? RbacSeeder::CENTRAL_TEAM;
+
+        $users = User::whereHas('roles', function ($q) use ($role, $team) {
+            $q->where('roles.id', $role->id)
+              ->where('model_has_roles.team_id', $team);
+        })->get(['id', 'name', 'email']);
+
+        return response()->json(['data' => $users]);
+    }
+
     // ── Assign role to user ───────────────────────────────────────────────────
 
     public function assignToUser(Request $request, int $roleId): JsonResponse

@@ -193,6 +193,10 @@ Route::prefix('v1')->group(function () {
             ->middleware('permission:roles.delete')
             ->name('api.v1.rbac.roles.destroy');
 
+        Route::get('/roles/{roleId}/users', [RoleController::class, 'listUsers'])
+            ->middleware('permission:roles.view')
+            ->name('api.v1.rbac.roles.users');
+
         Route::post('/roles/{roleId}/assign', [RoleController::class, 'assignToUser'])
             ->middleware('permission:roles.assign')
             ->name('api.v1.rbac.roles.assign');
