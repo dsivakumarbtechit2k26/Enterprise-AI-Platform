@@ -15,6 +15,8 @@ use Illuminate\Support\Str;
 
 class TenantController extends Controller
 {
+    public function __construct(private readonly TenantRbacSeeder $rbacSeeder) {}
+
     public function store(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -44,7 +46,7 @@ class TenantController extends Controller
 
             // Seed tenant-scoped RBAC roles (tenant-admin, manager, member, viewer).
             // Any failure here aborts and rolls back the tenant creation.
-            (new TenantRbacSeeder())->run($tenant->id);
+            $this->rbacSeeder->run($tenant->id);
 
             return $tenant;
         });

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Laravel\Cashier\Cashier;
 use Laravel\Cashier\Subscription;
 
 /**
@@ -27,5 +29,16 @@ class TenantSubscription extends Subscription
     public function owner(): BelongsTo
     {
         return $this->billable();
+    }
+
+    /**
+     * Override the parent items() relationship to pin the foreign-key column
+     * to 'subscription_id' — the column name used in the subscription_items
+     * migration. Without this, Laravel auto-derives 'tenant_subscription_id'
+     * from the class name, which does not exist in the table.
+     */
+    public function items(): HasMany
+    {
+        return $this->hasMany(Cashier::$subscriptionItemModel, 'subscription_id');
     }
 }

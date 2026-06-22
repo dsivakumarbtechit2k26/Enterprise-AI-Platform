@@ -111,8 +111,9 @@ class User extends Authenticatable implements MustVerifyEmailContract
     {
         $this->passwordHistory()->create(['password_hash' => $hash]);
 
-        // Keep only last 5
-        $ids = $this->passwordHistory()->skip(5)->pluck('id');
+        // Keep only the most recent 5 entries.
+        // Pair skip() with take() so SQLite does not generate OFFSET-without-LIMIT.
+        $ids = $this->passwordHistory()->skip(5)->take(PHP_INT_MAX)->pluck('id');
         if ($ids->isNotEmpty()) {
             UserPasswordHistory::whereIn('id', $ids)->delete();
         }
