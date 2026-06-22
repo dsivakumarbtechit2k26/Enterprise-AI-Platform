@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -75,11 +76,24 @@ class AdminUsersController extends Controller
         $user   = User::findOrFail($userId);
         $status = Password::broker()->sendResetLink(['email' => $user->email]);
 
+        $sent = $status === Password::RESET_LINK_SENT;
+
+        AuditLog::record(
+            event:     'user.password.reset',
+            newValues: [
+                'target_user_id'    => $user->id,
+                'target_user_email' => $user->email,
+                'email_sent'        => $sent,
+            ],
+            actorId:   $request->user()?->id,
+            ipAddress: $request->ip(),
+        );
+
         return response()->json(
-            ['message' => $status === Password::RESET_LINK_SENT
+            ['message' => $sent
                 ? 'Password reset email sent successfully.'
                 : 'Unable to send reset email at this time.'],
-            $status === Password::RESET_LINK_SENT ? 200 : 422,
+            $sent ? 200 : 422,
         );
     }
 }
